@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots and debug artifacts
+screenshots/
+
+# Bug reports (contain device info)
+bugreport-*.zip
+
+# Data files with sensitive info (IMEI data)
+receive.txt
+
+# UI dumps
+ui_dump.xml
+
+# Temporary files
+*.tmp
+*.log
+
