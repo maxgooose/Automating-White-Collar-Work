@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Add Stock</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 30px;
+        }
+        h1 { 
+            text-align: center; 
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .device-status {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+        .device-status .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .device-status.connected .dot { background: #28a745; }
+        .device-status.disconnected .dot { background: #dc3545; }
+        .container {
+            display: flex;
+            gap: 30px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .panel {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .panel h2 {
+            margin: 0 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .icon {
+            width: 24px;
+            height: 24px;
+        }
+        label { 
+            display: block; 
+            margin-top: 15px; 
+            font-weight: 600;
+            color: #555;
+            font-size: 13px;
+        }
+        input[type="text"] { 
+            width: 100%; 
+            padding: 10px; 
+            margin-top: 5px; 
+            font-size: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #666;
+        }
+        input[type="file"] { 
+            margin-top: 10px;
+            width: 100%;
+        }
+        button { 
+            padding: 12px; 
+            margin-top: 15px; 
+            font-size: 14px; 
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-weight: 500;
+            transition: all 0.2s;
+            background: #fafafa;
+            color: #333;
+        }
+        button:hover:not(:disabled) { 
+            background: #f0f0f0;
+            border-color: #999;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-full { width: 100%; }
+        .btn-half { width: 48%; }
+        .btn-third { width: 31%; }
+        .btn-row {
+            display: flex;
+            gap: 4%;
+            margin-top: 15px;
+        }
+        .btn-row-3 {
+            display: flex;
+            gap: 3.5%;
+            margin-top: 15px;
+        }
+        .btn-danger {
+            border-color: #dc3545;
+            color: #dc3545;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: #dc3545;
+            color: white;
+        }
+        .status-text { 
+            margin-top: 12px; 
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+        }
+        .status-text.error { color: #dc3545; }
+        .status-text.success { color: #28a745; }
+        .status { 
+            margin-top: 15px; 
+            padding: 12px; 
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 14px;
+            text-align: center;
+        }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+        .running { background: #fff3cd; color: #856404; }
+        #transferList { 
+            margin-top: 15px; 
+            font-size: 13px; 
+            max-height: 180px; 
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        #transferList div { 
+            padding: 8px 12px; 
+            border-bottom: 1px solid #eee;
+        }
+        #transferList div:last-child { border-bottom: none; }
+        #transferList div.completed { background: #d4edda; }
+        #transferList div.current { background: #fff3cd; font-weight: 600; }
+        #transferList div.failed { background: #f8d7da; }
+        .hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 8px;
+        }
+        .dropzone {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin-top: 15px;
+            cursor: pointer;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .dropzone:hover { border-color: #666; background: #f5f5f5; }
+        .dropzone.dragover { border-color: #28a745; background: #f0fff0; }
+        .excel-icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 10px;
+        }
+        /* Progress bar */
+        .progress-container {
+            margin-top: 15px;
+            display: none;
+        }
+        .progress-container.active { display: block; }
+        .progress-bar {
+            height: 24px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #666;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+        .progress-label {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+            text-align: center;
+        }
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .running { animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body>
+    <h1>Quick Add Stock</h1>
+    
+    <div id="deviceStatus" class="device-status disconnected - Connect it first">
+        <span class="dot"></span>
+        <span id="deviceText">Checking device...</span>
+    </div>
+    
+    <div class="container">
+        <!-- Manual stock add  -->
+        <div class="panel">
+            <h2>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Manual Stock Add
+            </h2>
+            
+           
+            
+            <label>IMEI</label>
+            <input type="text" id="imei" placeholder="Scan or type IMEI">
+            
+            <button class="btn-full" id="executeBtn" onclick="executeTransfer()">Execute</button>
+            <div class="status-text" id="status">Ready</div>
+        </div>
+
+        <!-- Excel Upload -->
+        <div class="panel">
+            <h2>
+                <svg class="excel-icon icon" viewBox="0 0 24 24" fill="#1D6F42">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                    <path fill="white" d="M14 2v6h6"/>
+                    <text x="7" y="17" font-size="7" fill="white" font-weight="bold">XLS</text>
+                </svg>
+                Excel Import
+            </h2>
+            
+            <div class="hint">Column A = sublocation, Column B = IMEI</div>
+            
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
+                <svg class="excel-icon" viewBox="0 0 48 48">
+                    <rect x="8" y="4" width="32" height="40" rx="2" fill="#1D6F42"/>
+                    <rect x="12" y="12" width="10" height="6" fill="white" opacity="0.9"/>
+                    <rect x="26" y="12" width="10" height="6" fill="white" opacity="0.7"/>
+                    <rect x="12" y="21" width="10" height="6" fill="white" opacity="0.7"/>
+                    <rect x="26" y="21" width="10" height="6" fill="white" opacity="0.9"/>
+                    <rect x="12" y="30" width="10" height="6" fill="white" opacity="0.9"/>
+                    <rect x="26" y="30" width="10" height="6" fill="white" opacity="0.7"/>
+                </svg>
+                <div>Drop Excel file here or click to browse</div>
+            </div>
+            <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:none" onchange="uploadExcel()">
+            
+            <button class="btn-full" onclick="uploadExcel()">Load File</button>
+            
+            <div class="btn-row-3" id="batchButtons" style="display: none;">
+                <button class="btn-third" id="executeBatchBtn" onclick="executeBatch()">Execute All</button>
+                <button class="btn-third" id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
+                <button class="btn-third btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
+            </div>
+            
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                    <div class="progress-text" id="progressText">0 / 0</div>
+                </div>
+                <div class="progress-label" id="progressLabel">Waiting...</div>
+            </div>
+            
+            <div class="status" id="uploadStatus">No file loaded</div>
+            <div id="transferList"></div>
+        </div>
+    </div>
+
+    <script>
+        let loadedTransfers = [];
+        let eventSource = null;
+        let isExecuting = false;
+        let isPaused = false;
+
+        // Check device status on load
+        checkDeviceStatus();
+        setInterval(checkDeviceStatus, 5000);
+
+        async function checkDeviceStatus() {
+            try {
+                const res = await fetch('/device-status');
+                const data = await res.json();
+                const statusEl = document.getElementById('deviceStatus');
+                const textEl = document.getElementById('deviceText');
+                
+                if (data.connected) {
+                    statusEl.className = 'device-status connected';
+                    textEl.textContent = 'Device connected';
+                } else {
+                    statusEl.className = 'device-status disconnected';
+                    textEl.textContent = 'No device connected';
+                }
+            } catch (e) {
+                document.getElementById('deviceStatus').className = 'device-status disconnected';
+                document.getElementById('deviceText').textContent = 'Connection error';
+            }
+        }
+
+        // Drag and drop
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('excelFile');
+        
+        dropzone.addEventListener('dragover', e => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                uploadExcel();
+            }
+        });
+
+        async function executeTransfer() {
+            const from = document.getElementById('from').value.trim();
+            const to = document.getElementById('to').value.trim();
+            const imei = document.getElementById('imei').value.trim();
+            const status = document.getElementById('status');
+            const btn = document.getElementById('executeBtn');
+            
+            if (!from || !to || !imei) {
+                status.className = 'status-text error';
+                status.textContent = 'All fields required';
+                return;
+            }
+            
+            btn.disabled = true;
+            status.className = 'status-text';
+            status.textContent = 'Executing...';
+            
+            try {
+                const res = await fetch('/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from_location: from, to_location: to, imei: imei })
+                });
+                const data = await res.json();
+                status.className = 'status-text ' + (data.success ? 'success' : 'error');
+                status.textContent = data.message;
+                if (data.success) {
+                    document.getElementById('imei').value = '';
+                    document.getElementById('imei').focus();
+                }
+            } catch (e) {
+                status.className = 'status-text error';
+                status.textContent = 'Error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        async function uploadExcel() {
+            const fileInput = document.getElementById('excelFile');
+            const status = document.getElementById('uploadStatus');
+            const list = document.getElementById('transferList');
+            const batchBtns = document.getElementById('batchButtons');
+            
+            if (!fileInput.files.length) {
+                status.className = 'status error';
+                status.textContent = 'Select a file first';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            status.className = 'status';
+            status.textContent = 'Uploading...';
+            list.innerHTML = '';
+            
+            try {
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                status.className = 'status ' + (data.success ? 'success' : 'error');
+                status.textContent = data.message;
+                
+                if (data.success && data.transfers) {
+                    loadedTransfers = data.transfers;
+                    renderTransferList();
+                    batchBtns.style.display = 'flex';
+                }
+            } catch (e) {
+                status.className = 'status error';
+                status.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function renderTransferList(currentIndex = -1, completedCount = 0, failedIndex = -1) {
+            const list = document.getElementById('transferList');
+            list.innerHTML = loadedTransfers.map((t, i) => {
+                let cls = '';
+                if (failedIndex === i) cls = 'failed';
+                else if (i < completedCount) cls = 'completed';
+                else if (i === currentIndex) cls = 'current';
+                return `<div class="${cls}" id="transfer-${i}"><strong>${i+1}.</strong> ${t.from} → ${t.to} | ${t.imei}</div>`;
+            }).join('');
+        }
+
+        async function executeBatch() {
+            if (loadedTransfers.length === 0) {
+                document.getElementById('uploadStatus').className = 'status error';
+                document.getElementById('uploadStatus').textContent = 'No transfers loaded';
+                return;
+            }
+
+            isExecuting = true;
+            isPaused = false;
+            updateExecutionUI(true);
+            
+            // Start SSE connection
+            eventSource = new EventSource('/status-stream');
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateProgress(data);
+                
+                if (!data.running) {
+                    eventSource.close();
+                    isExecuting = false;
+                    isPaused = false;
+                    updateExecutionUI(false);
+                    
+                    const status = document.getElementById('uploadStatus');
+                    if (data.result) {
+                        status.className = 'status ' + (data.result.success ? 'success' : 'error');
+                        status.textContent = data.result.message;
+                        
+                        if (!data.result.success && data.result.failed_at) {
+                            const failedIdx = loadedTransfers.findIndex(
+                                t => t.imei === data.result.failed_at.imei
+                            );
+                            renderTransferList(-1, data.result.completed, failedIdx);
+                        }
+                    }
+                }
+            };
+            
+            eventSource.onerror = () => {
+                eventSource.close();
+                isExecuting = false;
+                isPaused = false;
+                updateExecutionUI(false);
+            };
+            
+            try {
+                const res = await fetch('/execute-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ transfers: loadedTransfers })
+                });
+                const data = await res.json();
+                
+                if (!data.success) {
+                    document.getElementById('uploadStatus').className = 'status error';
+                    document.getElementById('uploadStatus').textContent = data.message;
+                    eventSource.close();
+                    isExecuting = false;
+                    updateExecutionUI(false);
+                }
+            } catch (e) {
+                document.getElementById('uploadStatus').className = 'status error';
+                document.getElementById('uploadStatus').textContent = 'Error: ' + e.message;
+                eventSource.close();
+                isExecuting = false;
+                updateExecutionUI(false);
+            }
+        }
+
+        async function togglePause() {
+            const pauseBtn = document.getElementById('pauseBtn');
+            try {
+                if (isPaused) {
+                    await fetch('/resume', { method: 'POST' });
+                    isPaused = false;
+                    pauseBtn.textContent = 'Pause';
+                } else {
+                    await fetch('/pause', { method: 'POST' });
+                    isPaused = true;
+                    pauseBtn.textContent = 'Resume';
+                }
+            } catch (e) {
+                console.error('Pause/Resume error:', e);
+            }
+        }
+
+        async function stopExecution() {
+            try {
+                await fetch('/stop', { method: 'POST' });
+                document.getElementById('uploadStatus').className = 'status';
+                document.getElementById('uploadStatus').textContent = 'Stop requested...';
+            } catch (e) {
+                console.error('Stop error:', e);
+            }
+        }
+
+        function updateProgress(data) {
+            const progressContainer = document.getElementById('progressContainer');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const progressLabel = document.getElementById('progressLabel');
+            
+            progressContainer.classList.add('active');
+            
+            const percent = data.total > 0 ? (data.current / data.total) * 100 : 0;
+            progressFill.style.width = percent + '%';
+            progressText.textContent = `${data.current} / ${data.total}`;
+            progressLabel.textContent = data.message || 'Processing...';
+            
+            if (data.current > 0) {
+                renderTransferList(data.current - 1, data.current - 1);
+            }
+        }
+
+        function updateExecutionUI(executing) {
+            document.getElementById('executeBatchBtn').disabled = executing;
+            document.getElementById('pauseBtn').disabled = !executing;
+            document.getElementById('stopBtn').disabled = !executing;
+            
+            if (executing) {
+                document.getElementById('progressContainer').classList.add('active');
+            }
+            
+            if (!executing) {
+                document.getElementById('pauseBtn').textContent = 'Pause';
+            }
+        }
+        
+        document.getElementById('imei').addEventListener('keypress', e => {
+            if (e.key === 'Enter') executeTransfer();
+        });
+    </script>
+</body>
+</html>
