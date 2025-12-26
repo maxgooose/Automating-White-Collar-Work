@@ -179,3 +179,14 @@ If websites don't load on the emulator:
 2. Restart with DNS flag: `-dns-server 8.8.8.8`
 3. Test: `adb shell ping google.com`
 
+bulk add stock :
+press the following in order :
+4. Stock change
+1. Add
+then enter sublocation from excel sheet Column A
+
+
+
+### Receive :
+step1 : Navigate 3 buttons down, enter `easier navigation than pressing buttons`
+step2 : Type order ID from cell   
