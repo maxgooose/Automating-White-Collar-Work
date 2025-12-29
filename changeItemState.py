@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import subprocess
 import time
 
@@ -10,32 +9,25 @@ def type_text(text):
 def press_enter():
     subprocess.run([ADB, "shell", "input", "keyevent", "KEYCODE_ENTER"], capture_output=True)
 
-# Read IMEI/NEW_ID pairs from file
-with open("next_productID.txt", "r") as f:
-    lines = [line.strip() for line in f if line.strip()]
+with open("/Users/hamza/Desktop/Programma Uscita Pulita/previous_state.txt", "r") as f:
+    previous_states = [line.strip() for line in f if line.strip()]
 
-print(f"Processing {len(lines)} items...")
 
-for i, line in enumerate(lines, 1):
-    # Parse "IMEI, NEW_ID" format
-    parts = [part.strip() for part in line.split(",")]
-    if len(parts) != 2:
-        print(f"[{i}/{len(lines)}] Skipping invalid line: {line}")
-        continue
-    
-    imei, new_id = parts
-    print(f"[{i}/{len(lines)}] IMEI: {imei} -> NEW_ID: {new_id}")
-    
-    # Type IMEI and press enter
+with open("/Users/hamza/Desktop/Programma Uscita Pulita/next_state.txt", "r") as f:
+    next_states = [line.strip() for line in f if line.strip()]
+
+print(f"Processing {len(previous_states, next_states)} being done")
+
+for i, imei in enumerate(imeis, 1):
+    print(f"[{i}/{len(imeis)}] {imei}")
     type_text(imei)
     time.sleep(0.1)
     press_enter()
     time.sleep(0.3)
-    
-    # Type NEW_ID and press enter
-    type_text(new_id)
-    time.sleep(0.1)
-    press_enter()
-    time.sleep(0.3)
 
-print(f"DONE! Processed {len(lines)} items.")
+
+
+    
+
+
+

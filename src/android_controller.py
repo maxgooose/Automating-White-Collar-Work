@@ -271,7 +271,7 @@ class FinaleAutomator(AndroidController):
     PACKAGE_NAME = "com.finaleinventory.denali"
     
     # ========== SCREEN COORDINATES (2400x1080 landscape) ==========
-    # Bottom button row
+    # Bottom button row (main app screens)
     BTN_Y = 950
     BTN_LEFT_X = 120      # Back / Clear / Prev
     BTN_CENTER_X = 390    # Enter
@@ -283,6 +283,11 @@ class FinaleAutomator(AndroidController):
     MENU_ITEM_2_Y = 280   # Item 2 or 6
     MENU_ITEM_3_Y = 375   # Item 3 or 7
     MENU_ITEM_4_Y = 470   # Item 4 or 8
+    
+    # Confirmation dialog buttons (Change item state screen)
+    CONFIRM_DIALOG_Y = 580         # Y position for both buttons
+    CONFIRM_DIALOG_BACK_X = 245    # Back button (left)
+    CONFIRM_DIALOG_CONFIRM_X = 1310  # Confirm button (right)
     
     # ========== TIMING CONSTANTS ==========
     DELAY_AFTER_TAP = 1.0       # Wait after tapping a button
@@ -350,6 +355,18 @@ class FinaleAutomator(AndroidController):
         y = y_positions.get(item_num, self.MENU_ITEM_1_Y)
         print(f"Tapping menu item {item_num} at ({self.MENU_X}, {y})")
         self.tap(self.MENU_X, y)
+        time.sleep(self.DELAY_AFTER_TAP)
+    
+    def tap_confirm_button(self):
+        """Tap the Confirm button on confirmation dialogs (right side)"""
+        print(f"Tapping CONFIRM button at ({self.CONFIRM_DIALOG_CONFIRM_X}, {self.CONFIRM_DIALOG_Y})")
+        self.tap(self.CONFIRM_DIALOG_CONFIRM_X, self.CONFIRM_DIALOG_Y)
+        time.sleep(self.DELAY_AFTER_TAP)
+    
+    def tap_confirm_back_button(self):
+        """Tap the Back button on confirmation dialogs (left side)"""
+        print(f"Tapping BACK button at ({self.CONFIRM_DIALOG_BACK_X}, {self.CONFIRM_DIALOG_Y})")
+        self.tap(self.CONFIRM_DIALOG_BACK_X, self.CONFIRM_DIALOG_Y)
         time.sleep(self.DELAY_AFTER_TAP)
     
     def navigate_to_transfer_from(self) -> bool:
