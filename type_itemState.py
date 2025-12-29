@@ -47,4 +47,10 @@ if len(imeis) % 2 == 1:
     time.sleep(0.5)
 
 print(f"DONE! Processed {len(imeis)} barcodes.")
-
+if imei.startswith("IPHONE"):
+        time.sleep(0.1)
+        type_text("IPHONE 11 128GB BLACK A2111")
+        #scenario output for iphone 11
+        time.sleep(0.3)
+        press_enter()
+        
