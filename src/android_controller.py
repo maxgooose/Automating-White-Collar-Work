@@ -588,6 +588,200 @@ class FinaleAutomator(AndroidController):
         self._current_to = None
         self._stop_requested = False
         self._pause_requested = False
+    
+    # ========== CHANGE ITEM STATE ==========
+    
+    def navigate_to_change_item_state(self) -> bool:
+        """
+        Navigate from Main Menu to Change Item State screen using COORDINATES.
+        
+        Flow:
+        1. Start at Main Menu (items 1-4: Sync, Pick, Receive, Stock change)
+        2. Tap MORE button → shows items 5-8
+        3. Tap MORE button → shows items 9-12
+        4. Tap item 1 on this page ("9. Change item state")
+        """
+        print("\n=== NAVIGATING TO CHANGE ITEM STATE ===")
+        
+        # Step 1: Tap "More" button to go to page 2 (items 5-8)
+        print("Step 1: Tap MORE button (page 2)...")
+        self.tap_more_button()
+        time.sleep(self.DELAY_SCREEN_TRANSITION)
+        
+        # Step 2: Tap "More" button again to go to page 3 (items 9-12)
+        print("Step 2: Tap MORE button (page 3)...")
+        self.tap_more_button()
+        time.sleep(self.DELAY_SCREEN_TRANSITION)
+        
+        # Step 3: Tap item 1 on page 3 ("9. Change item state")
+        print("Step 3: Tap menu item 1 (9. Change item state)...")
+        self.tap_menu_item(1)
+        time.sleep(self.DELAY_SCREEN_TRANSITION)
+        
+        print("=== NAVIGATION COMPLETE ===\n")
+        return True
+    
+    def execute_change_item_state(self, imei: str, new_product_id: str) -> dict:
+        """
+        Execute a single Change Item State operation.
+        
+        Flow:
+        1. Navigate to Change Item State screen
+        2. Type IMEI, press ENTER
+        3. Type new Product ID, press ENTER
+        4. Tap CONFIRM button
+        5. Navigate back to main menu
+        """
+        try:
+            print(f"\n{'='*60}")
+            print(f"CHANGE ITEM STATE")
+            print(f"IMEI: {imei}")
+            print(f"NEW PRODUCT ID: {new_product_id}")
+            print(f"{'='*60}")
+            
+            # Navigate to Change Item State screen
+            self.navigate_to_change_item_state()
+            
+            # Enter IMEI
+            print(f"Typing IMEI: {imei}")
+            self._run_shell('input', 'text', imei)
+            time.sleep(self.DELAY_AFTER_TYPE)
+            self.tap_enter_button()
+            time.sleep(self.DELAY_SCREEN_TRANSITION)
+            
+            # Enter new Product ID
+            escaped_pid = new_product_id.replace(' ', '%s')
+            print(f"Typing Product ID: {new_product_id}")
+            self._run_shell('input', 'text', escaped_pid)
+            time.sleep(self.DELAY_AFTER_TYPE)
+            self.tap_enter_button()
+            time.sleep(self.DELAY_SCREEN_TRANSITION)
+            
+            # Tap Confirm
+            self.tap_confirm_button()
+            time.sleep(self.DELAY_SCREEN_TRANSITION)
+            
+            # Navigate back to main menu
+            self.navigate_back_to_main_menu()
+            
+            print(f"{'='*60}")
+            print("CHANGE ITEM STATE COMPLETE!")
+            print(f"{'='*60}\n")
+            
+            return {
+                'success': True,
+                'message': f'Changed {imei} to {new_product_id}'
+            }
+            
+        except Exception as e:
+            print(f"ERROR: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}'
+            }
+    
+    def execute_change_item_state_batch(self, items: list, progress_callback=None) -> dict:
+        """
+        Execute batch Change Item State for multiple IMEI/Product ID pairs.
+        
+        Args:
+            items: List of dicts with 'imei' and 'new_product_id' keys
+            progress_callback: Function(current, total, status, imei) for progress updates
+        
+        Flow:
+        1. Navigate to Change Item State screen ONCE
+        2. For each item:
+           - Type IMEI, ENTER
+           - Type Product ID, ENTER
+           - Tap CONFIRM
+        3. Navigate back to main menu
+        """
+        self._stop_requested = False
+        self._pause_requested = False
+        
+        # Filter out invalid items
+        valid_items = [item for item in items 
+                       if item.get('imei') and item.get('new_product_id')]
+        total = len(valid_items)
+        completed = 0
+        
+        if total == 0:
+            return {
+                'success': False, 'completed': 0, 'total': 0,
+                'failed_at': None, 'message': 'No valid IMEI/Product ID pairs provided'
+            }
+        
+        try:
+            print(f"\n{'='*60}")
+            print(f"BATCH CHANGE ITEM STATE: {total} items")
+            print(f"{'='*60}")
+            
+            # Navigate to Change Item State screen ONCE
+            self.navigate_to_change_item_state()
+            
+            # Loop through all items
+            for i, item in enumerate(valid_items):
+                imei = str(item['imei']).strip()
+                new_product_id = str(item['new_product_id']).strip()
+                
+                if self._stop_requested:
+                    self.navigate_back_to_main_menu()
+                    return {
+                        'success': False, 'completed': completed, 'total': total,
+                        'failed_at': item, 'message': f'Stopped after {completed}/{total}'
+                    }
+                
+                if not self._wait_if_paused():
+                    self.navigate_back_to_main_menu()
+                    return {
+                        'success': False, 'completed': completed, 'total': total,
+                        'failed_at': item, 'message': f'Stopped after {completed}/{total}'
+                    }
+                
+                if progress_callback:
+                    progress_callback(i + 1, total, 'processing', imei)
+                
+                print(f"\n[{i + 1}/{total}] {imei} -> {new_product_id}")
+                
+                # Type IMEI and press ENTER
+                self._run_shell('input', 'text', imei)
+                time.sleep(self.DELAY_AFTER_TYPE)
+                self.tap_enter_button()
+                time.sleep(self.DELAY_SCREEN_TRANSITION)
+                
+                # Type Product ID and press ENTER
+                escaped_pid = new_product_id.replace(' ', '%s')
+                self._run_shell('input', 'text', escaped_pid)
+                time.sleep(self.DELAY_AFTER_TYPE)
+                self.tap_enter_button()
+                time.sleep(self.DELAY_SCREEN_TRANSITION)
+                
+                # Tap Confirm
+                self.tap_confirm_button()
+                time.sleep(self.DELAY_AFTER_TAP)
+                
+                completed += 1
+                
+                if progress_callback:
+                    progress_callback(i + 1, total, 'completed', imei)
+            
+            # All done - navigate back to main menu
+            print("\nBatch complete!")
+            self.navigate_back_to_main_menu()
+            
+            return {
+                'success': True, 'completed': completed, 'total': total,
+                'failed_at': None, 'message': f'Completed all {total} item state changes'
+            }
+            
+        except Exception as e:
+            self.navigate_back_to_main_menu()
+            current_item = valid_items[completed] if completed < total else None
+            return {
+                'success': False, 'completed': completed, 'total': total,
+                'failed_at': current_item,
+                'message': f'Error: {str(e)}'
+            }
 
 
 # Quick test

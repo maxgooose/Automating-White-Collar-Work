@@ -366,7 +366,7 @@
             status.textContent = 'Executing...';
             
             try {
-                const res = await fetch('/execute', {
+                const res = await fetch('/change-state/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ imei: imei, new_product_id: newProductId })
@@ -406,7 +406,7 @@
             list.innerHTML = '';
             
             try {
-                const res = await fetch('/upload', {
+                const res = await fetch('/change-state/upload', {
                     method: 'POST',
                     body: formData
                 });
@@ -432,7 +432,11 @@
                 if (failedIndex === i) cls = 'failed';
                 else if (i < completedCount) cls = 'completed';
                 else if (i === currentIndex) cls = 'current';
-                return `<div class="${cls}" id="item-${i}"><strong>${i+1}.</strong> ${item.imei} → ${item.new_product_id}</div>`;
+                // Truncate long product IDs for display
+                const displayPid = item.new_product_id.length > 30 
+                    ? item.new_product_id.substring(0, 30) + '...' 
+                    : item.new_product_id;
+                return `<div class="${cls}" id="item-${i}"><strong>${i+1}.</strong> ${item.imei} → ${displayPid}</div>`;
             }).join('');
         }
 
@@ -447,8 +451,8 @@
             isPaused = false;
             updateExecutionUI(true);
             
-            // Start SSE connection
-            eventSource = new EventSource('/status-stream');
+            // Start SSE connection for Change Item State
+            eventSource = new EventSource('/change-state/status-stream');
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 updateProgress(data);
@@ -482,7 +486,7 @@
             };
             
             try {
-                const res = await fetch('/execute-batch', {
+                const res = await fetch('/change-state/execute-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: loadedItems })
@@ -509,11 +513,11 @@
             const pauseBtn = document.getElementById('pauseBtn');
             try {
                 if (isPaused) {
-                    await fetch('/resume', { method: 'POST' });
+                    await fetch('/change-state/resume', { method: 'POST' });
                     isPaused = false;
                     pauseBtn.textContent = 'Pause';
                 } else {
-                    await fetch('/pause', { method: 'POST' });
+                    await fetch('/change-state/pause', { method: 'POST' });
                     isPaused = true;
                     pauseBtn.textContent = 'Resume';
                 }
@@ -524,7 +528,7 @@
 
         async function stopExecution() {
             try {
-                await fetch('/stop', { method: 'POST' });
+                await fetch('/change-state/stop', { method: 'POST' });
                 document.getElementById('uploadStatus').className = 'status';
                 document.getElementById('uploadStatus').textContent = 'Stop requested...';
             } catch (e) {
