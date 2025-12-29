@@ -228,6 +228,21 @@ if __name__ == "__main__":
 
 
 
+
+
+
+# Excel upload feature implemented in:
+# - Server: src/transferer_server.py (routes: /change-state/upload, /change-state/execute-batch, etc.)
+# - Frontend: src/templates/changeItemState.html
+# - Automation: src/android_controller.py (FinaleAutomator.execute_change_item_state_batch)
+#
+# Excel format:
+# - Column A: IMEI (starting from row 2)
+# - Column B: New Product ID (starting from row 2)
+# - Row 1 is header row (ignored)
+
+
+
 #//  Find a button with the text "Submit" and click it
 #  onElement { textAsString() == "Submit" }.click()
 

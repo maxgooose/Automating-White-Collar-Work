@@ -30,6 +30,16 @@ pending_batch = {
     'imeis': []
 }
 
+# Change Item State specific state
+change_state_status = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'current_item': None,
+    'message': ''
+}
+pending_change_state_items = []
+
 
 def get_automator():
     """Get or create the FinaleAutomator instance"""
@@ -99,6 +109,10 @@ def execute_single():
         execution_status['message'] = f'Error: {str(e)}'
         return jsonify({'success': False, 'message': str(e)})
 
+# NOTE: Change Item State upload at /change-state/upload writes to receive.txt and runs change_item_state_auto.py
+# This /upload route is for Transfer: reads col A,B,C = from, to, imei
+
+
 
 @app.route('/upload', methods=['POST'])
 def upload_excel():
@@ -135,6 +149,9 @@ def upload_excel():
         # Collect all IMEIs from column C (handle numeric values from Excel)
         imeis = []
         for row in ws.iter_rows(min_row=1, values_only=True):
+            # Ensure row has at least 3 columns (A, B, C)
+            if not row or len(row) < 3:
+                continue
             if row[2] is not None:
                 # Handle numeric IMEIs (Excel may read as float)
                 imei_val = row[2]
@@ -318,6 +335,311 @@ def device_status():
             'devices': [],
             'error': str(e)
         })
+
+
+# ============================================================
+# CHANGE ITEM STATE ROUTES
+# ============================================================
+
+@app.route('/change-state')
+def change_state_page():
+    """Serve the Change Item State interface"""
+    return render_template('changeItemState.html')
+
+
+@app.route('/change-state/upload', methods=['POST'])
+def upload_change_state_excel():
+    """
+    Handle Excel file upload for Change Item State.
+    
+    Excel format:
+    - Column A: IMEI (starting from row 2)
+    - Column B: New Product ID (starting from row 2)
+    - Row 1 is header row (ignored)
+    """
+    global pending_change_state_items
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'})
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No file selected'})
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'File must be .xlsx or .xls'})
+    
+    try:
+        # Read Excel file
+        wb = load_workbook(filename=io.BytesIO(file.read()))
+        ws = wb.active
+        
+        # Collect IMEI (column A) and Product ID (column B) pairs
+        # Starting from row 2 (row 1 is header)
+        items = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            # Ensure row has at least 2 columns
+            if not row or len(row) < 2:
+                continue
+            
+            # Column A = IMEI, Column B = Product ID
+            imei_val = row[0]
+            product_id_val = row[1]
+            
+            # Skip if either value is empty
+            if imei_val is None or product_id_val is None:
+                continue
+            
+            # Handle numeric IMEIs (Excel may read as float)
+            if isinstance(imei_val, float):
+                imei_val = int(imei_val)
+            imei_str = str(imei_val).strip()
+            product_id_str = str(product_id_val).strip()
+            
+            if imei_str and product_id_str:
+                items.append({
+                    'imei': imei_str,
+                    'new_product_id': product_id_str
+                })
+        
+        if not items:
+            return jsonify({'success': False, 'message': 'No valid IMEI/Product ID pairs found (check columns A and B, starting from row 2)'})
+        
+        # Store items for execution
+        pending_change_state_items = items
+        
+        # Write to receive.txt in format expected by change_item_state_auto.py
+        # Format: imei\nproductID\nimei\nproductID\n...
+        receive_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt'
+        with open(receive_file, 'w') as f:
+            for item in items:
+                f.write(f"{item['imei']}\n")
+                f.write(f"{item['new_product_id']}\n")
+        
+        print(f"Loaded {len(items)} Change Item State pairs and wrote to receive.txt:")
+        for item in items[:5]:  # Show first 5
+            print(f"  {item['imei']} -> {item['new_product_id']}")
+        if len(items) > 5:
+            print(f"  ... and {len(items) - 5} more")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Loaded {len(items)} IMEI/Product ID pairs (saved to receive.txt)',
+            'items': items
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error reading file: {str(e)}'})
+
+
+@app.route('/change-state/execute', methods=['POST'])
+def execute_single_change_state():
+    """Execute a single Change Item State operation - writes to receive.txt and runs script"""
+    global change_state_status
+    import subprocess
+    
+    if change_state_status['running']:
+        return jsonify({'success': False, 'message': 'Another execution is in progress'})
+    
+    data = request.json
+    imei = data.get('imei', '')
+    new_product_id = data.get('new_product_id', '')
+    
+    if not imei or not new_product_id:
+        return jsonify({'success': False, 'message': 'IMEI and Product ID are required'})
+    
+    try:
+        change_state_status['running'] = True
+        change_state_status['current'] = 1
+        change_state_status['total'] = 1
+        change_state_status['message'] = 'Executing change item state...'
+        
+        # Write single item to receive.txt
+        receive_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt'
+        with open(receive_file, 'w') as f:
+            f.write(f"{imei}\n")
+            f.write(f"{new_product_id}\n")
+        
+        # Run change_item_state_auto.py
+        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/change_item_state_auto.py'
+        result = subprocess.run(
+            ['python3', script_path],
+            capture_output=True,
+            text=True,
+            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+        )
+        
+        change_state_status['running'] = False
+        
+        if result.returncode == 0:
+            change_state_status['message'] = f'Changed {imei} to {new_product_id}'
+            return jsonify({'success': True, 'message': f'Changed {imei} to {new_product_id}'})
+        else:
+            change_state_status['message'] = f'Script error: {result.stderr}'
+            return jsonify({'success': False, 'message': f'Script error: {result.stderr}'})
+        
+    except Exception as e:
+        change_state_status['running'] = False
+        change_state_status['message'] = f'Error: {str(e)}'
+        return jsonify({'success': False, 'message': str(e)})
+
+
+def execute_change_state_batch_worker(items):
+    """Background worker for batch Change Item State execution - runs change_item_state_auto.py"""
+    global change_state_status
+    import subprocess
+    
+    total = len(items)
+    script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/change_item_state_auto.py'
+    
+    try:
+        change_state_status['current'] = 0
+        change_state_status['total'] = total
+        change_state_status['message'] = 'Starting change_item_state_auto.py...'
+        
+        # Run the automation script
+        result = subprocess.run(
+            ['python3', script_path],
+            capture_output=True,
+            text=True,
+            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+        )
+        
+        if result.returncode == 0:
+            change_state_status['running'] = False
+            change_state_status['current'] = total
+            change_state_status['message'] = f'Completed all {total} items'
+            change_state_status['result'] = {
+                'success': True,
+                'completed': total,
+                'total': total,
+                'message': f'Completed all {total} item state changes'
+            }
+        else:
+            change_state_status['running'] = False
+            change_state_status['message'] = f'Script error: {result.stderr}'
+            change_state_status['result'] = {
+                'success': False,
+                'completed': 0,
+                'total': total,
+                'message': f'Script error: {result.stderr}'
+            }
+            
+    except Exception as e:
+        change_state_status['running'] = False
+        change_state_status['message'] = f'Error: {str(e)}'
+        change_state_status['result'] = {
+            'success': False,
+            'completed': 0,
+            'total': total,
+            'message': f'Error: {str(e)}'
+        }
+
+
+@app.route('/change-state/execute-batch', methods=['POST'])
+def execute_change_state_batch():
+    """Start batch execution of Change Item State"""
+    global change_state_status, pending_change_state_items
+    
+    if change_state_status['running']:
+        return jsonify({'success': False, 'message': 'Another execution is in progress'})
+    
+    # Use items from request or pending items
+    data = request.json or {}
+    items = data.get('items', pending_change_state_items)
+    
+    if not items:
+        return jsonify({'success': False, 'message': 'No items to execute'})
+    
+    # Reset status
+    change_state_status = {
+        'running': True,
+        'current': 0,
+        'total': len(items),
+        'current_item': None,
+        'message': 'Starting batch execution...',
+        'result': None
+    }
+    
+    # Start background thread
+    thread = threading.Thread(target=execute_change_state_batch_worker, args=(items,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Started batch: {len(items)} items'
+    })
+
+
+@app.route('/change-state/stop', methods=['POST'])
+def stop_change_state():
+    """Stop the current Change Item State batch execution"""
+    global change_state_status
+    
+    if not change_state_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_stop()
+    
+    return jsonify({'success': True, 'message': 'Stop requested'})
+
+
+@app.route('/change-state/pause', methods=['POST'])
+def pause_change_state():
+    """Pause the current Change Item State batch execution"""
+    global change_state_status
+    
+    if not change_state_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_pause()
+    change_state_status['message'] = 'Paused'
+    
+    return jsonify({'success': True, 'message': 'Paused'})
+
+
+@app.route('/change-state/resume', methods=['POST'])
+def resume_change_state():
+    """Resume a paused Change Item State batch execution"""
+    global change_state_status
+    
+    if not change_state_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_resume()
+    change_state_status['message'] = 'Resumed'
+    
+    return jsonify({'success': True, 'message': 'Resumed'})
+
+
+@app.route('/change-state/status')
+def get_change_state_status():
+    """Get current Change Item State execution status"""
+    return jsonify(change_state_status)
+
+
+@app.route('/change-state/status-stream')
+def change_state_status_stream():
+    """Server-Sent Events stream for real-time Change Item State status updates"""
+    def generate():
+        last_status = None
+        while True:
+            current = json.dumps(change_state_status)
+            if current != last_status:
+                yield f"data: {current}\n\n"
+                last_status = current
+            time.sleep(0.3)  # Poll every 300ms
+            
+            # Stop streaming if not running and we've sent the final status
+            if not change_state_status['running'] and last_status == current:
+                yield f"data: {current}\n\n"
+                break
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 
 if __name__ == '__main__':
