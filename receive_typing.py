@@ -25,7 +25,7 @@ press_enter()
 time.sleep(0.1)
 for i, imei in enumerate(imeis[1::], 1):
     print(f"[{i}/{len(imeis)}] {imei}")
-    if imei.startswith("IPHONE") :
+    if imei.startswith("G") or imei.startswith("g") :
         time.sleep(0.1)
         print("iphone found")
         time.sleep(0.1)

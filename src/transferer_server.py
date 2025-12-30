@@ -40,6 +40,16 @@ change_state_status = {
 }
 pending_change_state_items = []
 
+# Receive specific state
+receive_status = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'current_item': None,
+    'message': ''
+}
+pending_receive_items = []
+
 
 def get_automator():
     """Get or create the FinaleAutomator instance"""
@@ -640,6 +650,298 @@ def change_state_status_stream():
                 break
     
     return Response(generate(), mimetype='text/event-stream')
+
+
+# ============================================================
+# RECEIVE ROUTES
+# ============================================================
+
+@app.route('/receive')
+def receive_page():
+    """Serve the Receive interface"""
+    return render_template('receive.html')
+
+
+@app.route('/receive', methods=['POST'])
+def execute_single_receive():
+    """Execute a single receive operation"""
+    data = request.json
+    order_id = data.get('order_id', '')
+    sublocation = data.get('sublocation', '')
+    product_id = data.get('product_id', '')
+    imei = data.get('imei', '')
+    
+    if not all([order_id, sublocation, product_id, imei]):
+        return jsonify({'success': False, 'message': 'All fields are required'})
+    
+    try:
+        # For single receive, we can write to receive_data.txt and execute receive_typing.py
+        # Format: product name (from product_id), then IMEI
+        receive_data_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_data.txt'
+        with open(receive_data_file, 'w') as f:
+            f.write(f"{product_id}\n")
+            f.write(f"{imei}\n")
+        
+        # Execute receive_typing.py in background
+        import subprocess
+        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_typing.py'
+        subprocess.Popen(
+            ['python3', script_path],
+            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'Received {imei} for {product_id} (executing receive_typing.py)'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/upload-receive', methods=['POST'])
+def upload_receive_excel():
+    """
+    Handle Excel file upload for Receive.
+    
+    Excel format:
+    - Fixed start: D7
+    - QTY header: E6
+    - Data rows: Starting from row 7
+    - Product name: B7+C7 (concatenated)
+    - IMEIs: Column D (D7, D8, D9, etc.)
+    - Quantity: Column E (E7, E8, etc.)
+    - When E7 contains quantity N (e.g., 5), it means:
+      - Product name from B7+C7 applies to rows 7 through (7+N-1) = rows 7-11
+      - IMEIs are in D7, D8, D9, D10, D11
+      - Next item starts when a new quantity appears in column E (e.g., E12)
+    """
+    global pending_receive_items
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'})
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No file selected'})
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'File must be .xlsx or .xls'})
+    
+    try:
+        # Read Excel file
+        wb = load_workbook(filename=io.BytesIO(file.read()))
+        ws = wb.active
+        
+        # Parse Excel according to specification
+        items = []
+        row = 7  # Fixed start at row 7
+        
+        # Get max row
+        max_row = ws.max_row
+        
+        while row <= max_row:
+            # Check quantity cell in column E
+            qty_cell = ws[f'E{row}'].value
+            
+            # If quantity cell is empty, we're done
+            if qty_cell is None or qty_cell == '':
+                break
+            
+            # Convert quantity to int
+            try:
+                qty = int(qty_cell)
+            except (ValueError, TypeError):
+                # If not a valid number, skip this row
+                row += 1
+                continue
+            
+            # Get product name from B+C (concatenated)
+            b_val = ws[f'B{row}'].value
+            c_val = ws[f'C{row}'].value
+            product_name = str(b_val or '') + str(c_val or '')
+            product_name = product_name.strip()
+            
+            if not product_name:
+                # Skip if no product name
+                row += qty
+                continue
+            
+            # Collect IMEIs from column D for the quantity range
+            imeis = []
+            for i in range(qty):
+                imei_cell = ws[f'D{row + i}'].value
+                if imei_cell is not None:
+                    # Handle numeric IMEIs (Excel may read as float)
+                    if isinstance(imei_cell, float):
+                        imei_cell = int(imei_cell)
+                    imei_str = str(imei_cell).strip()
+                    if imei_str:
+                        imeis.append(imei_str)
+            
+            if imeis:
+                items.append({
+                    'product_name': product_name,
+                    'imeis': imeis
+                })
+            
+            # Move to next quantity group
+            row += qty
+        
+        if not items:
+            return jsonify({'success': False, 'message': 'No valid items found in Excel file (check format: QTY in column E starting at row 7, IMEIs in column D, product name in B+C)'})
+        
+        # Store items for execution
+        pending_receive_items = items
+        
+        # Write to receive_data.txt in format expected by receive_typing.py
+        # Format: Product name on one line, followed by IMEIs (one per line)
+        receive_data_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_data.txt'
+        with open(receive_data_file, 'w') as f:
+            for item in items:
+                f.write(f"{item['product_name']}\n")
+                for imei in item['imeis']:
+                    f.write(f"{imei}\n")
+        
+        print(f"Loaded {len(items)} Receive items and wrote to receive_data.txt:")
+        total_imeis = sum(len(item['imeis']) for item in items)
+        print(f"  Total: {len(items)} products, {total_imeis} IMEIs")
+        for item in items[:3]:  # Show first 3
+            print(f"  {item['product_name']}: {len(item['imeis'])} IMEIs")
+        if len(items) > 3:
+            print(f"  ... and {len(items) - 3} more products")
+        
+        # Execute receive_typing.py in background
+        import subprocess
+        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_typing.py'
+        subprocess.Popen(
+            ['python3', script_path],
+            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+        )
+        
+        # Prepare items list for frontend (flatten for display)
+        display_items = []
+        for item in items:
+            for imei in item['imeis']:
+                display_items.append({
+                    'imei': imei,
+                    'product_name': item['product_name']
+                })
+        
+        # Extract order metadata if available (from first row or other location)
+        # For now, return empty strings - can be enhanced later
+        return jsonify({
+            'success': True,
+            'message': f'Loaded {len(items)} products with {total_imeis} IMEIs (saved to receive_data.txt, executing receive_typing.py)',
+            'items': display_items,
+            'order_id': '',
+            'sublocation': '',
+            'product_id': ''
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error reading file: {str(e)}'})
+
+
+@app.route('/execute-receive-batch', methods=['POST'])
+def execute_receive_batch():
+    """Start batch execution of Receive operations"""
+    global receive_status, pending_receive_items
+    
+    if receive_status['running']:
+        return jsonify({'success': False, 'message': 'Another execution is in progress'})
+    
+    # Use items from request or pending items
+    data = request.json or {}
+    items = data.get('items', pending_receive_items)
+    
+    if not items:
+        return jsonify({'success': False, 'message': 'No items to execute'})
+    
+    # For receive batch, we already wrote to receive_data.txt and executed receive_typing.py
+    # So we just need to track the status
+    receive_status = {
+        'running': True,
+        'current': 0,
+        'total': len(items),
+        'current_item': None,
+        'message': 'Processing receive batch...',
+        'result': None
+    }
+    
+    # The actual execution is handled by receive_typing.py which is already running
+    # We'll update status as we can track it
+    
+    return jsonify({
+        'success': True,
+        'message': f'Started batch: {len(items)} items'
+    })
+
+
+@app.route('/receive-status-stream')
+def receive_status_stream():
+    """Server-Sent Events stream for real-time Receive status updates"""
+    def generate():
+        last_status = None
+        while True:
+            current = json.dumps(receive_status)
+            if current != last_status:
+                yield f"data: {current}\n\n"
+                last_status = current
+            time.sleep(0.3)  # Poll every 300ms
+            
+            # Stop streaming if not running and we've sent the final status
+            if not receive_status['running'] and last_status == current:
+                yield f"data: {current}\n\n"
+                break
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/receive-pause', methods=['POST'])
+def pause_receive():
+    """Pause the current Receive batch execution"""
+    global receive_status
+    
+    if not receive_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_pause()
+    receive_status['message'] = 'Paused'
+    
+    return jsonify({'success': True, 'message': 'Paused'})
+
+
+@app.route('/receive-resume', methods=['POST'])
+def resume_receive():
+    """Resume a paused Receive batch execution"""
+    global receive_status
+    
+    if not receive_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_resume()
+    receive_status['message'] = 'Resumed'
+    
+    return jsonify({'success': True, 'message': 'Resumed'})
+
+
+@app.route('/receive-stop', methods=['POST'])
+def stop_receive():
+    """Stop the current Receive batch execution"""
+    global receive_status
+    
+    if not receive_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+    
+    auto = get_automator()
+    auto.request_stop()
+    
+    return jsonify({'success': True, 'message': 'Stop requested'})
 
 
 if __name__ == '__main__':
