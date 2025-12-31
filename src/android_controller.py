@@ -1,21 +1,30 @@
 """
 Android Controller - Base automation utilities for Android via ADB
 Uses text-based element finding for reliable navigation.
+Cross-platform compatible (Windows, macOS, Linux).
 """
 import subprocess
 import time
 import os
 import re
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Import cross-platform ADB utilities
+try:
+    from adb_utils import get_adb_path, get_data_file_path
+except ImportError:
+    # Fallback for direct script execution
+    from src.adb_utils import get_adb_path, get_data_file_path
+
 
 class AndroidController:
-    """Control Android device/emulator via ADB"""
+    """Control Android device/emulator via ADB (cross-platform)"""
     
     def __init__(self, device_id: str = None):
         self.device_id = device_id
-        self.adb_path = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
+        self.adb_path = get_adb_path()
         
     def _run_adb(self, *args) -> str:
         """Run an ADB command and return output"""

@@ -2,6 +2,7 @@
 """
 Change Item State Automation
 Reads IMEI/Product ID pairs from receive.txt and automates the Change Item State flow.
+Cross-platform compatible (Windows, macOS, Linux).
 
 Data format in receive.txt:
 - Line 1: IMEI
@@ -13,9 +14,21 @@ Data format in receive.txt:
 import subprocess
 import time
 import re
+import sys
+import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
-ADB = "/Users/hamza/Library/Android/sdk/platform-tools/adb"
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
+
+try:
+    from adb_utils import get_adb_path, get_data_file_path
+except ImportError:
+    from src.adb_utils import get_adb_path, get_data_file_path
+
+# Get cross-platform ADB path
+ADB = get_adb_path()
 
 # Timing (ULTRA mode - minimal delays)
 DELAY_TAP = 0.1
@@ -25,16 +38,15 @@ DELAY_AFTER_CONFIRM = 0.4
 
 
 def run_adb(*args):
-    """Run ADB command"""
+    """Run ADB command."""
     cmd = [ADB] + list(args)
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.stdout.strip()
 
 
 def get_screen_size():
-    """Get screen dimensions"""
+    """Get screen dimensions."""
     output = run_adb("shell", "wm", "size")
-    # Output: "Physical size: 1080x2400"
     size = output.split(": ")[1]
     w, h = size.split("x")
     return int(w), int(h)
@@ -45,7 +57,6 @@ def find_element_by_text(text):
     Find element by text using UI automator dump.
     Returns (x, y) center coordinates or None if not found.
     """
-    # Dump UI hierarchy
     run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     ui_xml = run_adb("shell", "cat", "/sdcard/ui.xml")
     run_adb("shell", "rm", "/sdcard/ui.xml")
@@ -60,7 +71,6 @@ def find_element_by_text(text):
         print(f"  ERROR: XML parse error: {e}")
         return None
     
-    # Search for element with matching text
     for elem in root.iter('node'):
         node_text = elem.attrib.get('text', '')
         if node_text.lower() == text.lower():
@@ -77,14 +87,13 @@ def find_element_by_text(text):
 
 
 def tap(x, y):
-    """Tap at coordinates"""
+    """Tap at coordinates."""
     run_adb("shell", "input", "tap", str(x), str(y))
     time.sleep(DELAY_TAP)
 
 
 def type_text(text):
-    """Type text via ADB - this is slow but reliable"""
-    # Escape special characters
+    """Type text via ADB."""
     escaped = text.replace(" ", "%s")
     escaped = escaped.replace("'", "\\'")
     escaped = escaped.replace('"', '\\"')
@@ -92,20 +101,17 @@ def type_text(text):
     escaped = escaped.replace("(", "\\(")
     escaped = escaped.replace(")", "\\)")
     escaped = escaped.replace("+", "\\+")
-    # No delay after - next command handles timing
     subprocess.run([ADB, "shell", "input", "text", escaped], capture_output=True)
 
 
 def press_enter():
-    """Press Enter key"""
+    """Press Enter key."""
     run_adb("shell", "input", "keyevent", "KEYCODE_ENTER")
     time.sleep(DELAY_TAP)
 
 
 def tap_confirm():
-    """Tap Confirm button - portrait mode coordinates (1080x2400)"""
-    # Confirm button is at bottom-right of the dialog
-    # Working coordinates: around (900, 2100) in portrait mode
+    """Tap Confirm button - portrait mode coordinates (1080x2400)."""
     confirm_x = 900
     confirm_y = 2100
     
@@ -115,7 +121,7 @@ def tap_confirm():
 
 
 def press_down():
-    """Press DOWN key"""
+    """Press DOWN key."""
     run_adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
     time.sleep(0.02)
 
@@ -123,19 +129,16 @@ def press_down():
 def navigate_to_change_item_state():
     """
     Navigate from main menu to Change Item State screen.
-    
     Method: Press DOWN 9 times, then ENTER to select.
     """
     print("\n=== NAVIGATING TO CHANGE ITEM STATE ===")
     
-    # Press DOWN 9 times
     for i in range(9):
         print(f"  DOWN {i + 1}/9")
         press_down()
     
     time.sleep(0.3)
     
-    # Press ENTER to select
     print("  -> Pressing ENTER to select...")
     press_enter()
     time.sleep(DELAY_SCREEN)
@@ -144,12 +147,9 @@ def navigate_to_change_item_state():
 
 
 def process_item(imei, product_id, index, total):
-    """
-    Process a single IMEI/Product ID pair - BATCHED for speed.
-    """
+    """Process a single IMEI/Product ID pair - BATCHED for speed."""
     print(f"\n[{index}/{total}] {imei} -> {product_id[:30]}...")
     
-    # Escape text for shell
     def escape(t):
         e = t.replace(" ", "%s").replace("'", "\\'").replace('"', '\\"')
         e = e.replace("&", "\\&").replace("(", "\\(").replace(")", "\\)")
@@ -170,13 +170,18 @@ def process_item(imei, product_id, index, total):
     # Tap Confirm
     tap_confirm()
     
-    print(f"  ✓ Done!")
+    print(f"  Done!")
 
 
 def main():
-    """Main automation loop"""
-    # Read data from receive.txt
-    data_file = "/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt"
+    """Main automation loop."""
+    # Get data file path (cross-platform)
+    data_file = get_data_file_path("receive.txt")
+    
+    if not os.path.exists(data_file):
+        print(f"ERROR: Data file not found: {data_file}")
+        print("Upload an Excel file via the web interface first.")
+        sys.exit(1)
     
     with open(data_file, "r") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -191,6 +196,7 @@ def main():
     total = len(pairs)
     print(f"\n{'='*60}")
     print(f"CHANGE ITEM STATE AUTOMATION")
+    print(f"ADB path: {ADB}")
     print(f"Found {total} IMEI/Product ID pairs to process")
     print(f"{'='*60}")
     
@@ -205,11 +211,9 @@ def main():
     if total > 3:
         print(f"  ... and {total - 3} more")
     
-    # Start immediately
     print("\nGO!")
     
     # Navigate to Change Item State screen
-    # Comment this out if you're already on the screen!
     navigate_to_change_item_state()
     
     # Process each pair
@@ -217,40 +221,9 @@ def main():
         process_item(imei, product_id, i, total)
     
     print(f"\n{'='*60}")
-    print(f"✓ ALL DONE! Processed {total} items.")
+    print(f"ALL DONE! Processed {total} items.")
     print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-# Excel upload feature implemented in:
-# - Server: src/transferer_server.py (routes: /change-state/upload, /change-state/execute-batch, etc.)
-# - Frontend: src/templates/changeItemState.html
-# - Automation: src/android_controller.py (FinaleAutomator.execute_change_item_state_batch)
-#
-# Excel format:
-# - Column A: IMEI (starting from row 2)
-# - Column B: New Product ID (starting from row 2)
-# - Row 1 is header row (ignored)
-
-
-
-#//  Find a button with the text "Submit" and click it
-#  onElement { textAsString() == "Submit" }.click()
-
-
-#// Find a UI element by its resource ID
-#onElement { viewIdResourceName == "my_button_id" }.click()
-
-##// Allow a permission request
-##  watchFor(PermissionDialog) {
-##   clickAllow()
-##  }
