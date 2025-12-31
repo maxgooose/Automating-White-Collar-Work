@@ -61,7 +61,13 @@ def get_automator():
 
 @app.route('/')
 def index():
-    """Serve the main transfer interface"""
+    """Serve the home page with navigation"""
+    return render_template('index.html')
+
+
+@app.route('/transfer')
+def transfer_page():
+    """Serve the transfer interface"""
     return render_template('transferer.html')
 
 
@@ -347,6 +353,12 @@ def device_status():
         })
 
 
+@app.route('/bulk-stock')
+def bulk_stock_page():
+    """Serve the Bulk Stock interface"""
+    return render_template('bulkStock.html')
+
+
 # ============================================================
 # CHANGE ITEM STATE ROUTES
 # ============================================================
@@ -355,6 +367,11 @@ def device_status():
 def change_state_page():
     """Serve the Change Item State interface"""
     return render_template('changeItemState.html')
+
+@app.route('/demo')
+def demo_page():
+    """Serve the demo page"""
+    return render_template('demo.html')
 
 
 @app.route('/change-state/upload', methods=['POST'])
@@ -462,7 +479,7 @@ def execute_single_change_state():
         change_state_status['running'] = True
         change_state_status['current'] = 1
         change_state_status['total'] = 1
-        change_state_status['message'] = 'Executing change item state...'
+        change_state_status['message'] = 'running change_item_state_auto.py'
         
         # Write single item to receive.txt
         receive_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt'
@@ -812,12 +829,15 @@ def upload_receive_excel():
             print(f"  ... and {len(items) - 3} more products")
         
         # Execute receive_typing.py in background
+        # currently commented out. no execution needed till user presses receive all
+        """
         import subprocess
         script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_typing.py'
         subprocess.Popen(
             ['python3', script_path],
             cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
         )
+        """
         
         # Prepare items list for frontend (flatten for display)
         display_items = []
