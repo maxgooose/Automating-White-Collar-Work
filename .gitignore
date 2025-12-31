@@ -39,3 +39,9 @@ ui_dump.xml
 *.tmp
 *.log
 
+# Dependency marker file
+.deps_installed
+
+# Data files
+receive_data.txt
+

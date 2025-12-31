@@ -1,15 +1,29 @@
 """
 Transferer Server - Web interface for inventory transfers
+Cross-platform compatible (Windows, macOS, Linux).
 """
 from flask import Flask, render_template, request, jsonify, Response
 from openpyxl import load_workbook
 import io
 import json
+import subprocess
 import threading
 import queue
 import time
+import os
+import sys
+from pathlib import Path
+
+# Setup cross-platform imports
+_script_dir = Path(__file__).parent
+_project_root = _script_dir.parent
+
+# Add paths for imports to work from any launch location
+sys.path.insert(0, str(_script_dir))
+sys.path.insert(0, str(_project_root))
 
 from android_controller import FinaleAutomator
+from adb_utils import get_data_file_path
 
 app = Flask(__name__)
 
@@ -437,7 +451,7 @@ def upload_change_state_excel():
         
         # Write to receive.txt in format expected by change_item_state_auto.py
         # Format: imei\nproductID\nimei\nproductID\n...
-        receive_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt'
+        receive_file = get_data_file_path('receive.txt')
         with open(receive_file, 'w') as f:
             for item in items:
                 f.write(f"{item['imei']}\n")
@@ -463,7 +477,6 @@ def upload_change_state_excel():
 def execute_single_change_state():
     """Execute a single Change Item State operation - writes to receive.txt and runs script"""
     global change_state_status
-    import subprocess
     
     if change_state_status['running']:
         return jsonify({'success': False, 'message': 'Another execution is in progress'})
@@ -482,18 +495,18 @@ def execute_single_change_state():
         change_state_status['message'] = 'running change_item_state_auto.py'
         
         # Write single item to receive.txt
-        receive_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive.txt'
+        receive_file = get_data_file_path('receive.txt')
         with open(receive_file, 'w') as f:
             f.write(f"{imei}\n")
             f.write(f"{new_product_id}\n")
         
         # Run change_item_state_auto.py
-        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/change_item_state_auto.py'
+        script_path = str(_project_root / 'change_item_state_auto.py')
         result = subprocess.run(
-            ['python3', script_path],
+            [sys.executable, script_path],
             capture_output=True,
             text=True,
-            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+            cwd=str(_project_root)
         )
         
         change_state_status['running'] = False
@@ -514,10 +527,9 @@ def execute_single_change_state():
 def execute_change_state_batch_worker(items):
     """Background worker for batch Change Item State execution - runs change_item_state_auto.py"""
     global change_state_status
-    import subprocess
     
     total = len(items)
-    script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/change_item_state_auto.py'
+    script_path = str(_project_root / 'change_item_state_auto.py')
     
     try:
         change_state_status['current'] = 0
@@ -526,10 +538,10 @@ def execute_change_state_batch_worker(items):
         
         # Run the automation script
         result = subprocess.run(
-            ['python3', script_path],
+            [sys.executable, script_path],
             capture_output=True,
             text=True,
-            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+            cwd=str(_project_root)
         )
         
         if result.returncode == 0:
@@ -694,17 +706,16 @@ def execute_single_receive():
     try:
         # For single receive, we can write to receive_data.txt and execute receive_typing.py
         # Format: product name (from product_id), then IMEI
-        receive_data_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_data.txt'
+        receive_data_file = get_data_file_path('receive_data.txt')
         with open(receive_data_file, 'w') as f:
             f.write(f"{product_id}\n")
             f.write(f"{imei}\n")
         
         # Execute receive_typing.py in background
-        import subprocess
-        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_typing.py'
+        script_path = str(_project_root / 'receive_typing.py')
         subprocess.Popen(
-            ['python3', script_path],
-            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
+            [sys.executable, script_path],
+            cwd=str(_project_root)
         )
         
         return jsonify({
@@ -813,7 +824,7 @@ def upload_receive_excel():
         
         # Write to receive_data.txt in format expected by receive_typing.py
         # Format: Product name on one line, followed by IMEIs (one per line)
-        receive_data_file = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_data.txt'
+        receive_data_file = get_data_file_path('receive_data.txt')
         with open(receive_data_file, 'w') as f:
             for item in items:
                 f.write(f"{item['product_name']}\n")
@@ -829,15 +840,9 @@ def upload_receive_excel():
             print(f"  ... and {len(items) - 3} more products")
         
         # Execute receive_typing.py in background
-        # currently commented out. no execution needed till user presses receive all
-        """
-        import subprocess
-        script_path = '/Users/hamza/Desktop/Programma Uscita Pulita/receive_typing.py'
-        subprocess.Popen(
-            ['python3', script_path],
-            cwd='/Users/hamza/Desktop/Programma Uscita Pulita'
-        )
-        """
+        # Currently commented out - no execution needed until user presses receive all
+        # script_path = str(_project_root / 'receive_typing.py')
+        # subprocess.Popen([sys.executable, script_path], cwd=str(_project_root))
         
         # Prepare items list for frontend (flatten for display)
         display_items = []
