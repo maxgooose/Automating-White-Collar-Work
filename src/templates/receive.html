@@ -5,395 +5,219 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quick Receive</title>
     <style>
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            margin: 0;
-            padding: 30px;
+            background: #1a1a1a;
+            min-height: 100vh;
+            padding: 40px 20px;
         }
-        h1 { 
-            text-align: center; 
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .device-status {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 13px;
-        }
-        .device-status .dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 6px;
-        }
-        .device-status.connected .dot { background: #28a745; }
-        .device-status.disconnected .dot { background: #dc3545; }
-        .container {
-            display: flex;
-            gap: 30px;
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-        .panel {
-            flex: 1;
-            background: white;
+        .back-link {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 14px;
             border-radius: 8px;
-            padding: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            background: #252525;
+            border: 1px solid #333;
+            transition: all 0.2s;
         }
-        .panel h2 {
-            margin: 0 0 20px 0;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #eee;
-            font-size: 18px;
+        .back-link:hover { color: #fff; border-color: #444; }
+        .device-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
             display: flex;
             align-items: center;
-            gap: 10px;
-        }
-        .icon {
-            width: 24px;
-            height: 24px;
-        }
-        label { 
-            display: block; 
-            margin-top: 15px; 
-            font-weight: 600;
-            color: #555;
-            font-size: 13px;
-        }
-        label:first-of-type { margin-top: 0; }
-        input[type="text"] { 
-            width: 100%; 
-            padding: 10px; 
-            margin-top: 5px; 
-            font-size: 15px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #666;
-        }
-        input[type="file"] { 
-            margin-top: 10px;
-            width: 100%;
-        }
-        button { 
-            padding: 12px; 
-            margin-top: 15px; 
-            font-size: 14px; 
-            cursor: pointer;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-weight: 500;
-            transition: all 0.2s;
-            background: #fafafa;
-            color: #333;
-        }
-        button:hover:not(:disabled) { 
-            background: #f0f0f0;
-            border-color: #999;
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .btn-full { width: 100%; }
-        .btn-half { width: 48%; }
-        .btn-third { width: 31%; }
-        .btn-row {
-            display: flex;
-            gap: 4%;
-            margin-top: 15px;
-        }
-        .btn-row-3 {
-            display: flex;
-            gap: 3.5%;
-            margin-top: 15px;
-        }
-        .btn-danger {
-            border-color: #dc3545;
-            color: #dc3545;
-        }
-        .btn-danger:hover:not(:disabled) {
-            background: #dc3545;
-            color: white;
-        }
-        .btn-primary {
-            border-color: #0d6efd;
-            color: #0d6efd;
-        }
-        .btn-primary:hover:not(:disabled) {
-            background: #0d6efd;
-            color: white;
-        }
-        .status-text { 
-            margin-top: 12px; 
-            font-size: 13px;
-            color: #666;
-            text-align: center;
-        }
-        .status-text.error { color: #dc3545; }
-        .status-text.success { color: #28a745; }
-        .status { 
-            margin-top: 15px; 
-            padding: 12px; 
-            background: #f8f9fa;
-            border-radius: 4px;
-            font-size: 14px;
-            text-align: center;
-        }
-        .error { background: #f8d7da; color: #721c24; }
-        .success { background: #d4edda; color: #155724; }
-        .running { background: #fff3cd; color: #856404; }
-        #receiveList { 
-            margin-top: 15px; 
-            font-size: 13px; 
-            max-height: 250px; 
-            overflow-y: auto;
-            background: #f8f9fa;
-            border-radius: 4px;
-        }
-        #receiveList div { 
-            padding: 8px 12px; 
-            border-bottom: 1px solid #eee;
-        }
-        #receiveList div:last-child { border-bottom: none; }
-        #receiveList div.completed { background: #d4edda; }
-        #receiveList div.current { background: #fff3cd; font-weight: 600; }
-        #receiveList div.failed { background: #f8d7da; }
-        .hint {
+            gap: 8px;
+            padding: 8px 14px;
+            background: #252525;
+            border: 1px solid #333;
+            border-radius: 8px;
             font-size: 12px;
             color: #888;
-            margin-top: 8px;
+        }
+        .device-status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #dc3545;
+        }
+        .device-status.connected .dot { background: #28a745; }
+        h1 {
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+            font-weight: 500;
+            margin: 40px 0 30px;
+        }
+        .panel {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #252525;
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid #333;
+        }
+        .hint {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 20px;
+            text-align: center;
         }
         .dropzone {
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            padding: 30px;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 40px 20px;
             text-align: center;
-            margin-top: 15px;
             cursor: pointer;
-            background: #fafafa;
+            background: #1a1a1a;
             transition: all 0.2s;
         }
-        .dropzone:hover { border-color: #666; background: #f5f5f5; }
-        .dropzone.dragover { border-color: #28a745; background: #f0fff0; }
-        .excel-icon {
+        .dropzone:hover { border-color: #555; background: #222; }
+        .dropzone.dragover { border-color: #666; background: #252525; }
+        .dropzone-icon {
             width: 48px;
             height: 48px;
-            margin-bottom: 10px;
+            margin: 0 auto 12px;
+            opacity: 0.6;
         }
-        /* Progress bar */
+        .dropzone-text { color: #888; font-size: 14px; }
+        input[type="file"] { display: none; }
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 16px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+            background: #333;
+            color: #fff;
+        }
+        button:hover:not(:disabled) { background: #444; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: #4ade80; color: #000; }
+        .btn-primary:hover:not(:disabled) { background: #3acd70; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover:not(:disabled) { background: #c82333; }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .btn-row button { flex: 1; margin-top: 0; }
         .progress-container {
-            margin-top: 15px;
+            margin-top: 20px;
             display: none;
         }
         .progress-container.active { display: block; }
         .progress-bar {
-            height: 24px;
-            background: #e9ecef;
+            height: 8px;
+            background: #1a1a1a;
             border-radius: 4px;
             overflow: hidden;
-            position: relative;
         }
         .progress-fill {
             height: 100%;
-            background: #0d6efd;
+            background: #4ade80;
             transition: width 0.3s ease;
             width: 0%;
         }
         .progress-text {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: 600;
-            color: #333;
-        }
-        .progress-label {
             font-size: 13px;
-            color: #666;
+            color: #888;
             margin-top: 8px;
             text-align: center;
         }
-        /* Order info display */
-        .order-info {
-            background: #e7f1ff;
-            border: 1px solid #b6d4fe;
-            border-radius: 6px;
-            padding: 12px 15px;
-            margin-top: 15px;
+        .status {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-radius: 8px;
             font-size: 13px;
+            text-align: center;
+            color: #888;
         }
-        .order-info .order-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
+        .status.error { background: #2d1f1f; color: #f87171; }
+        .status.success { background: #1f2d1f; color: #4ade80; }
+        #receiveList {
+            margin-top: 16px;
+            max-height: 200px;
+            overflow-y: auto;
+            border-radius: 8px;
+            background: #1a1a1a;
         }
-        .order-info .order-row:last-child { margin-bottom: 0; }
-        .order-info .order-label {
-            color: #0a58ca;
-            font-weight: 600;
+        #receiveList:empty { display: none; }
+        #receiveList div {
+            padding: 10px 14px;
+            border-bottom: 1px solid #333;
+            font-size: 13px;
+            color: #ccc;
         }
-        .order-info .order-value {
-            color: #333;
-            font-family: monospace;
-        }
-        /* Item count badge */
-        .item-count {
-            display: inline-block;
-            background: #0d6efd;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-        /* List item styles */
-        .list-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .list-item .imei {
-            font-family: monospace;
-            font-weight: 500;
-        }
-        .list-item .sublocation {
-            font-size: 11px;
-            color: #666;
-            background: #eee;
-            padding: 2px 6px;
-            border-radius: 3px;
-        }
-        /* Animations */
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        .running { animation: pulse 1.5s infinite; }
+        #receiveList div:last-child { border-bottom: none; }
+        #receiveList div.completed { background: #1f2d1f; color: #4ade80; }
+        #receiveList div.current { background: #2d2a1f; color: #fbbf24; }
+        #receiveList div.failed { background: #2d1f1f; color: #f87171; }
     </style>
 </head>
 <body>
-    <h1> Quick Receive</h1>
+    <a href="/" class="back-link">← Home</a>
     
-    <div id="deviceStatus" class="device-status disconnected">
+    <div class="device-status" id="deviceStatus">
         <span class="dot"></span>
-        <span id="deviceText">Checking device...</span>
+        <span id="deviceText">Checking...</span>
     </div>
     
-    <div class="container">
-        <!-- Manual Receive -->
-        <div class="panel">
-            <h2>
-                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                    <line x1="12" y1="22.08" x2="12" y2="12"/>
-                </svg>
-                Manual Receive
-            </h2>
-            
-            <label>Order ID</label>
-            <input type="text" id="orderId" placeholder="e.g., Purchase PS.123">
-            
-            <label>Default Sublocation</label>
-            <input type="text" id="sublocation" placeholder="e.g., A1">
-            
-            <label>Product ID</label>
-            <input type="text" id="productId" placeholder="e.g., ipad9/64gb/cell/gray/fbm">
-            
-            <label>IMEI</label>
-            <input type="text" id="imei" placeholder="Scan or type IMEI">
-            
-            <button class="btn-full btn-primary" id="executeBtn" onclick="executeReceive()">Receive Item</button>
-            <div class="status-text" id="status">Ready to receive</div>
+    <h1>Quick Receive</h1>
+    
+    <div class="panel">
+        <div class="hint">Row 7+: B+C = Product, D = IMEI, E = QTY</div>
+        
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
+            <svg class="dropzone-icon" viewBox="0 0 48 48">
+                <rect x="8" y="4" width="32" height="40" rx="3" fill="#1D6F42"/>
+                <rect x="12" y="12" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="12" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="12" y="20" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="26" y="20" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="12" y="28" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="28" width="10" height="5" fill="white" opacity="0.6"/>
+            </svg>
+            <div class="dropzone-text">Drop Excel file or click to browse</div>
         </div>
-
-        <!-- Excel Upload -->
-        <div class="panel">
-            <h2>
-                <svg class="excel-icon icon" viewBox="0 0 24 24" fill="#1D6F42">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                    <path fill="white" d="M14 2v6h6"/>
-                    <text x="7" y="17" font-size="7" fill="white" font-weight="bold">XLS</text>
-                </svg>
-                Excel Import
-            </h2>
-            
-            <div class="hint">
-                Column A = Order ID, Column B = Sublocation, Column C = Product ID, Column D = IMEI
-            </div>
-            
-            <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
-                <svg class="excel-icon" viewBox="0 0 48 48">
-                    <rect x="8" y="4" width="32" height="40" rx="2" fill="#1D6F42"/>
-                    <rect x="12" y="12" width="10" height="6" fill="white" opacity="0.9"/>
-                    <rect x="26" y="12" width="10" height="6" fill="white" opacity="0.7"/>
-                    <rect x="12" y="21" width="10" height="6" fill="white" opacity="0.7"/>
-                    <rect x="26" y="21" width="10" height="6" fill="white" opacity="0.9"/>
-                    <rect x="12" y="30" width="10" height="6" fill="white" opacity="0.9"/>
-                    <rect x="26" y="30" width="10" height="6" fill="white" opacity="0.7"/>
-                </svg>
-                <div>Drop Excel file here or click to browse</div>
-            </div>
-            <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:none" onchange="uploadExcel()">
-            
-            <button class="btn-full" onclick="uploadExcel()">Load File</button>
-            
-            <!-- Order info display after loading -->
-            <div class="order-info" id="orderInfo" style="display: none;">
-                <div class="order-row">
-                    <span class="order-label">Order ID:</span>
-                    <span class="order-value" id="displayOrderId">-</span>
-                </div>
-                <div class="order-row">
-                    <span class="order-label">Sublocation:</span>
-                    <span class="order-value" id="displaySublocation">-</span>
-                </div>
-                <div class="order-row">
-                    <span class="order-label">Product ID:</span>
-                    <span class="order-value" id="displayProductId">-</span>
-                </div>
-            </div>
-            
-            <div class="btn-row-3" id="batchButtons" style="display: none;">
-                <button class="btn-third btn-primary" id="executeBatchBtn" onclick="executeBatch()">Receive All</button>
-                <button class="btn-third" id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
-                <button class="btn-third btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
-            </div>
-            
-            <div class="progress-container" id="progressContainer">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                    <div class="progress-text" id="progressText">0 / 0</div>
-                </div>
-                <div class="progress-label" id="progressLabel">Waiting...</div>
-            </div>
-            
-            <div class="status" id="uploadStatus">No file loaded</div>
-            <div id="receiveList"></div>
+        <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel()">
+        
+        <button onclick="uploadExcel()">Load File</button>
+        
+        <div class="btn-row" id="batchButtons" style="display: none;">
+            <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Receive All</button>
+            <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
+            <button class="btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
         </div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">0 / 0</div>
+        </div>
+        
+        <div class="status" id="uploadStatus">No file loaded</div>
+        <div id="receiveList"></div>
     </div>
 
     <script>
         let loadedItems = [];
-        let orderMeta = { orderId: '', sublocation: '', productId: '' };
         let eventSource = null;
         let isExecuting = false;
         let isPaused = false;
 
-        // Check device status on load
         checkDeviceStatus();
         setInterval(checkDeviceStatus, 5000);
 
@@ -401,30 +225,18 @@
             try {
                 const res = await fetch('/device-status');
                 const data = await res.json();
-                const statusEl = document.getElementById('deviceStatus');
-                const textEl = document.getElementById('deviceText');
-                
-                if (data.connected) {
-                    statusEl.className = 'device-status connected';
-                    textEl.textContent = 'Device connected';
-                } else {
-                    statusEl.className = 'device-status disconnected';
-                    textEl.textContent = 'No device connected';
-                }
+                const el = document.getElementById('deviceStatus');
+                el.className = 'device-status' + (data.connected ? ' connected' : '');
+                document.getElementById('deviceText').textContent = data.connected ? 'Connected' : 'No device';
             } catch (e) {
-                document.getElementById('deviceStatus').className = 'device-status disconnected';
-                document.getElementById('deviceText').textContent = 'Connection error';
+                document.getElementById('deviceText').textContent = 'Error';
             }
         }
 
-        // Drag and drop
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('excelFile');
         
-        dropzone.addEventListener('dragover', e => {
-            e.preventDefault();
-            dropzone.classList.add('dragover');
-        });
+        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
         dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
         dropzone.addEventListener('drop', e => {
             e.preventDefault();
@@ -435,56 +247,10 @@
             }
         });
 
-        async function executeReceive() {
-            const orderId = document.getElementById('orderId').value.trim();
-            const sublocation = document.getElementById('sublocation').value.trim();
-            const productId = document.getElementById('productId').value.trim();
-            const imei = document.getElementById('imei').value.trim();
-            const status = document.getElementById('status');
-            const btn = document.getElementById('executeBtn');
-            
-            if (!orderId || !sublocation || !productId || !imei) {
-                status.className = 'status-text error';
-                status.textContent = 'All fields required';
-                return;
-            }
-            
-            btn.disabled = true;
-            status.className = 'status-text';
-            status.textContent = 'Receiving...';
-            
-            try {
-                const res = await fetch('/receive', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        order_id: orderId, 
-                        sublocation: sublocation, 
-                        product_id: productId,
-                        imei: imei 
-                    })
-                });
-                const data = await res.json();
-                status.className = 'status-text ' + (data.success ? 'success' : 'error');
-                status.textContent = data.message;
-                if (data.success) {
-                    document.getElementById('imei').value = '';
-                    document.getElementById('imei').focus();
-                }
-            } catch (e) {
-                status.className = 'status-text error';
-                status.textContent = 'Error: ' + e.message;
-            } finally {
-                btn.disabled = false;
-            }
-        }
-        
         async function uploadExcel() {
-            const fileInput = document.getElementById('excelFile');
             const status = document.getElementById('uploadStatus');
             const list = document.getElementById('receiveList');
             const batchBtns = document.getElementById('batchButtons');
-            const orderInfo = document.getElementById('orderInfo');
             
             if (!fileInput.files.length) {
                 status.className = 'status error';
@@ -496,33 +262,17 @@
             formData.append('file', fileInput.files[0]);
             
             status.className = 'status';
-            status.textContent = 'Uploading...';
+            status.textContent = 'Loading...';
             list.innerHTML = '';
-            orderInfo.style.display = 'none';
             
             try {
-                const res = await fetch('/upload-receive', {
-                    method: 'POST',
-                    body: formData
-                });
+                const res = await fetch('/upload-receive', { method: 'POST', body: formData });
                 const data = await res.json();
                 status.className = 'status ' + (data.success ? 'success' : 'error');
                 status.textContent = data.message;
                 
                 if (data.success && data.items) {
                     loadedItems = data.items;
-                    orderMeta = {
-                        orderId: data.order_id || '',
-                        sublocation: data.sublocation || '',
-                        productId: data.product_id || ''
-                    };
-                    
-                    // Display order info
-                    document.getElementById('displayOrderId').textContent = orderMeta.orderId || '-';
-                    document.getElementById('displaySublocation').textContent = orderMeta.sublocation || '-';
-                    document.getElementById('displayProductId').textContent = orderMeta.productId || '-';
-                    orderInfo.style.display = 'block';
-                    
                     renderReceiveList();
                     batchBtns.style.display = 'flex';
                 }
@@ -539,83 +289,41 @@
                 if (failedIndex === i) cls = 'failed';
                 else if (i < completedCount) cls = 'completed';
                 else if (i === currentIndex) cls = 'current';
-                return `<div class="${cls}" id="item-${i}">
-                    <div class="list-item">
-                        <span><strong>${i+1}.</strong> <span class="imei">${item.imei}</span></span>
-                        <span class="sublocation">${item.sublocation || orderMeta.sublocation}</span>
-                    </div>
-                </div>`;
+                return `<div class="${cls}"><strong>${i+1}.</strong> ${item.imei}</div>`;
             }).join('');
         }
 
         async function executeBatch() {
-            if (loadedItems.length === 0) {
-                document.getElementById('uploadStatus').className = 'status error';
-                document.getElementById('uploadStatus').textContent = 'No items loaded';
-                return;
-            }
-
+            if (!loadedItems.length) return;
             isExecuting = true;
             isPaused = false;
             updateExecutionUI(true);
             
-            // Start SSE connection
             eventSource = new EventSource('/receive-status-stream');
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 updateProgress(data);
-                
                 if (!data.running) {
                     eventSource.close();
                     isExecuting = false;
-                    isPaused = false;
                     updateExecutionUI(false);
-                    
-                    const status = document.getElementById('uploadStatus');
                     if (data.result) {
-                        status.className = 'status ' + (data.result.success ? 'success' : 'error');
-                        status.textContent = data.result.message;
-                        
-                        if (!data.result.success && data.result.failed_at) {
-                            const failedIdx = loadedItems.findIndex(
-                                item => item.imei === data.result.failed_at.imei
-                            );
-                            renderReceiveList(-1, data.result.completed, failedIdx);
-                        }
+                        document.getElementById('uploadStatus').className = 'status ' + (data.result.success ? 'success' : 'error');
+                        document.getElementById('uploadStatus').textContent = data.result.message;
                     }
                 }
             };
+            eventSource.onerror = () => { eventSource.close(); isExecuting = false; updateExecutionUI(false); };
             
-            eventSource.onerror = () => {
-                eventSource.close();
-                isExecuting = false;
-                isPaused = false;
-                updateExecutionUI(false);
-            };
-            
-            try {
-                const res = await fetch('/execute-receive-batch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        items: loadedItems,
-                        order_id: orderMeta.orderId,
-                        sublocation: orderMeta.sublocation,
-                        product_id: orderMeta.productId
-                    })
-                });
-                const data = await res.json();
-                
-                if (!data.success) {
-                    document.getElementById('uploadStatus').className = 'status error';
-                    document.getElementById('uploadStatus').textContent = data.message;
-                    eventSource.close();
-                    isExecuting = false;
-                    updateExecutionUI(false);
-                }
-            } catch (e) {
+            const res = await fetch('/execute-receive-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: loadedItems })
+            });
+            const data = await res.json();
+            if (!data.success) {
                 document.getElementById('uploadStatus').className = 'status error';
-                document.getElementById('uploadStatus').textContent = 'Error: ' + e.message;
+                document.getElementById('uploadStatus').textContent = data.message;
                 eventSource.close();
                 isExecuting = false;
                 updateExecutionUI(false);
@@ -623,83 +331,37 @@
         }
 
         async function togglePause() {
-            const pauseBtn = document.getElementById('pauseBtn');
-            try {
-                if (isPaused) {
-                    await fetch('/receive-resume', { method: 'POST' });
-                    isPaused = false;
-                    pauseBtn.textContent = 'Pause';
-                } else {
-                    await fetch('/receive-pause', { method: 'POST' });
-                    isPaused = true;
-                    pauseBtn.textContent = 'Resume';
-                }
-            } catch (e) {
-                console.error('Pause/Resume error:', e);
+            const btn = document.getElementById('pauseBtn');
+            if (isPaused) {
+                await fetch('/receive-resume', { method: 'POST' });
+                isPaused = false;
+                btn.textContent = 'Pause';
+            } else {
+                await fetch('/receive-pause', { method: 'POST' });
+                isPaused = true;
+                btn.textContent = 'Resume';
             }
         }
 
         async function stopExecution() {
-            try {
-                await fetch('/receive-stop', { method: 'POST' });
-                document.getElementById('uploadStatus').className = 'status';
-                document.getElementById('uploadStatus').textContent = 'Stop requested...';
-            } catch (e) {
-                console.error('Stop error:', e);
-            }
+            await fetch('/receive-stop', { method: 'POST' });
+            document.getElementById('uploadStatus').textContent = 'Stopping...';
         }
 
         function updateProgress(data) {
-            const progressContainer = document.getElementById('progressContainer');
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
-            const progressLabel = document.getElementById('progressLabel');
-            
-            progressContainer.classList.add('active');
-            
-            const percent = data.total > 0 ? (data.current / data.total) * 100 : 0;
-            progressFill.style.width = percent + '%';
-            progressText.textContent = `${data.current} / ${data.total}`;
-            progressLabel.textContent = data.message || 'Processing...';
-            
-            if (data.current > 0) {
-                renderReceiveList(data.current - 1, data.current - 1);
-            }
+            document.getElementById('progressContainer').classList.add('active');
+            const pct = data.total > 0 ? (data.current / data.total) * 100 : 0;
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
+            if (data.current > 0) renderReceiveList(data.current - 1, data.current - 1);
         }
 
-        function updateExecutionUI(executing) {
-            document.getElementById('executeBatchBtn').disabled = executing;
-            document.getElementById('pauseBtn').disabled = !executing;
-            document.getElementById('stopBtn').disabled = !executing;
-            
-            if (executing) {
-                document.getElementById('progressContainer').classList.add('active');
-            }
-            
-            if (!executing) {
-                document.getElementById('pauseBtn').textContent = 'Pause';
-            }
+        function updateExecutionUI(exec) {
+            document.getElementById('executeBatchBtn').disabled = exec;
+            document.getElementById('pauseBtn').disabled = !exec;
+            document.getElementById('stopBtn').disabled = !exec;
+            if (!exec) document.getElementById('pauseBtn').textContent = 'Pause';
         }
-        
-        // Enter key handlers
-        document.getElementById('imei').addEventListener('keypress', e => {
-            if (e.key === 'Enter') executeReceive();
-        });
-        
-        // Auto-focus IMEI field after filling other fields
-        ['orderId', 'sublocation', 'productId'].forEach(id => {
-            document.getElementById(id).addEventListener('keypress', e => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const fields = ['orderId', 'sublocation', 'productId', 'imei'];
-                    const currentIdx = fields.indexOf(id);
-                    if (currentIdx < fields.length - 1) {
-                        document.getElementById(fields[currentIdx + 1]).focus();
-                    }
-                }
-            });
-        });
     </script>
 </body>
 </html>
-

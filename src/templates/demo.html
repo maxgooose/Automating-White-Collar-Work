@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Item State - Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&family=Roboto+Mono&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body { 
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #202124;
+            color: #e8eaed;
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background: #202124;
+            border-bottom: 1px solid #3c4043;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .back-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .back-btn:hover { background: #3c4043; }
+        
+        .back-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: #9aa0a6;
+        }
+        
+        .page-title {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            font-size: 18px;
+            font-weight: 400;
+            color: #e8eaed;
+        }
+        
+        .device-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: #303134;
+            border-radius: 16px;
+            font-size: 12px;
+            color: #9aa0a6;
+        }
+        
+        .device-chip .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #34a853;
+        }
+
+        .main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            align-items: start;
+        }
+
+        .card {
+            background: #303134;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #3c4043;
+        }
+        
+        .card-title {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            color: #e8eaed;
+            margin-bottom: 4px;
+        }
+        
+        .card-subtitle {
+            font-size: 13px;
+            color: #9aa0a6;
+        }
+        
+        .card-body {
+            padding: 24px;
+        }
+
+        .upload-area {
+            border: 2px solid #3c4043;
+            border-radius: 8px;
+            padding: 32px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #202124;
+        }
+        
+        .upload-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            border-radius: 50%;
+            background: #3c4043;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .upload-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: #8ab4f8;
+        }
+        
+        .upload-text {
+            font-size: 14px;
+            color: #e8eaed;
+            margin-bottom: 4px;
+        }
+        
+        .upload-hint {
+            font-size: 12px;
+            color: #9aa0a6;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 24px;
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 36px;
+        }
+        
+        .btn-filled {
+            background: #8ab4f8;
+            color: #202124;
+        }
+        
+        .btn-filled:hover { background: #aecbfa; }
+        
+        .btn-tonal {
+            background: #394457;
+            color: #8ab4f8;
+        }
+        
+        .btn-tonal:hover { background: #435268; }
+        
+        .btn-danger {
+            background: #5c3535;
+            color: #f28b82;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        
+        .btn-row .btn { flex: 1; }
+
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            margin-top: 20px;
+        }
+        
+        .stat {
+            flex: 1;
+            background: #202124;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            font-size: 28px;
+            font-weight: 500;
+            color: #e8eaed;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #9aa0a6;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        
+        .stat-value.success { color: #81c995; }
+        .stat-value.processing { color: #8ab4f8; }
+        .stat-value.failed { color: #f28b82; }
+
+        /* Grid visualization */
+        .grid-container {
+            margin-top: 20px;
+            background: #202124;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .grid-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .grid-title {
+            font-size: 12px;
+            color: #9aa0a6;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .grid-legend {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: #9aa0a6;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+        
+        .legend-dot.pending { background: #3c4043; }
+        .legend-dot.current { background: #8ab4f8; }
+        .legend-dot.success { background: #81c995; }
+        .legend-dot.failed { background: #f28b82; }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(12px, 1fr));
+            gap: 3px;
+        }
+        
+        .cell {
+            aspect-ratio: 1;
+            background: #3c4043;
+            border-radius: 2px;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        
+        .cell.completed {
+            background: #81c995;
+        }
+        
+        .cell.current {
+            background: #8ab4f8;
+            animation: pulse 0.8s ease-in-out infinite;
+        }
+        
+        .cell.failed {
+            background: #f28b82;
+        }
+        
+        .cell:hover {
+            transform: scale(1.5);
+            z-index: 10;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        
+        .cell-tooltip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #e8eaed;
+            color: #202124;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s;
+            z-index: 100;
+        }
+        
+        .cell:hover .cell-tooltip {
+            opacity: 1;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-msg {
+            margin-top: 16px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            background: #2d4a3e;
+            color: #81c995;
+        }
+
+        .template-card .card-body { padding: 0; }
+        .template-img { width: 100%; display: block; }
+
+        /* Demo controls */
+        .demo-banner {
+            background: #f9ab00;
+            color: #202124;
+            padding: 8px 24px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .demo-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .demo-btn {
+            background: #202124;
+            color: #f9ab00;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        .demo-btn:hover { background: #303134; }
+        
+        .demo-select {
+            background: #202124;
+            color: #f9ab00;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 900px) {
+            .main { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-banner">
+        <span>🎬 DEMO MODE - Select item count and run</span>
+        <div class="demo-controls">
+            <select class="demo-select" id="itemCount">
+                <option value="50">50 items</option>
+                <option value="100">100 items</option>
+                <option value="150" selected>150 items</option>
+                <option value="250">250 items</option>
+                <option value="500">500 items</option>
+                <option value="1000">1000 items</option>
+            </select>
+            <button class="demo-btn" onclick="initDemo()">Load Items</button>
+            <button class="demo-btn" onclick="runDemo()">Run Demo</button>
+        </div>
+    </div>
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <a href="/" class="back-btn">
+                <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </a>
+            <span class="page-title">Change Item State</span>
+        </div>
+        <div class="device-chip">
+            <span class="indicator"></span>
+            <span>Device connected</span>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Upload Excel File</div>
+                <div class="card-subtitle">Column A: IMEI, Column B: New Product ID</div>
+            </div>
+            <div class="card-body">
+                <div class="upload-area">
+                    <div class="upload-icon">
+                        <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                    </div>
+                    <div class="upload-text">Drop file here or click to browse</div>
+                    <div class="upload-hint">.xlsx or .xls files</div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-filled" id="executeBtn">Execute All</button>
+                    <button class="btn btn-tonal" id="pauseBtn">Pause</button>
+                    <button class="btn btn-danger" id="stopBtn">Stop</button>
+                </div>
+
+                <div class="stats-row">
+                    <div class="stat">
+                        <div class="stat-value" id="totalCount">0</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value success" id="successCount">0</div>
+                        <div class="stat-label">Success</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value processing" id="processingCount">0</div>
+                        <div class="stat-label">Processing</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value failed" id="failedCount">0</div>
+                        <div class="stat-label">Failed</div>
+                    </div>
+                </div>
+
+                <div class="grid-container">
+                    <div class="grid-header">
+                        <span class="grid-title">Execution Progress</span>
+                        <div class="grid-legend">
+                            <div class="legend-item"><span class="legend-dot pending"></span> Pending</div>
+                            <div class="legend-item"><span class="legend-dot current"></span> Processing</div>
+                            <div class="legend-item"><span class="legend-dot success"></span> Success</div>
+                            <div class="legend-item"><span class="legend-dot failed"></span> Failed</div>
+                        </div>
+                    </div>
+                    <div class="grid" id="grid"></div>
+                </div>
+
+                <div class="status-msg" id="statusMsg">Select item count and click "Load Items"</div>
+            </div>
+        </div>
+
+        <div class="card template-card">
+            <div class="card-header">
+                <div class="card-title">Template Example</div>
+                <div class="card-subtitle">Format your Excel file like this</div>
+            </div>
+            <div class="card-body">
+                <img class="template-img" src="/static/cis-template.png" alt="Template Example">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let demoRunning = false;
+        let currentItem = 0;
+        let totalItems = 0;
+        let items = [];
+        let successCount = 0;
+        let failedCount = 0;
+
+        function generateIMEI() {
+            let imei = '35';
+            for (let i = 0; i < 13; i++) {
+                imei += Math.floor(Math.random() * 10);
+            }
+            return imei;
+        }
+
+        const products = [
+            'IPAD 9 WI-FI + CELLULAR 64GB GRAY',
+            'IPHONE 14 PRO 128GB SPACE BLACK',
+            'IPHONE 14 PRO MAX 256GB GOLD',
+            'MACBOOK AIR M2 256GB MIDNIGHT',
+            'APPLE WATCH SERIES 9 45MM GPS',
+            'IPHONE 15 128GB BLUE',
+            'IPAD PRO 11" 256GB SPACE GRAY',
+            'AIRPODS PRO 2ND GEN',
+        ];
+
+        function initDemo() {
+            totalItems = parseInt(document.getElementById('itemCount').value);
+            items = [];
+            currentItem = 0;
+            successCount = 0;
+            failedCount = 0;
+            demoRunning = false;
+
+            for (let i = 0; i < totalItems; i++) {
+                items.push({
+                    imei: generateIMEI(),
+                    product: products[Math.floor(Math.random() * products.length)],
+                    status: 'pending'
+                });
+            }
+
+            renderGrid();
+            updateStats();
+            document.getElementById('statusMsg').textContent = `Loaded ${totalItems} items - Click "Run Demo" to start`;
+            document.getElementById('statusMsg').style.background = '#394457';
+            document.getElementById('statusMsg').style.color = '#8ab4f8';
+        }
+
+        function renderGrid() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            items.forEach((item, index) => {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.index = index;
+                
+                const tooltip = document.createElement('div');
+                tooltip.className = 'cell-tooltip';
+                tooltip.textContent = `#${index + 1}: ${item.imei.slice(-6)}`;
+                cell.appendChild(tooltip);
+                
+                grid.appendChild(cell);
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('totalCount').textContent = totalItems;
+            document.getElementById('successCount').textContent = successCount;
+            document.getElementById('processingCount').textContent = demoRunning ? 1 : 0;
+            document.getElementById('failedCount').textContent = failedCount;
+        }
+
+        function runDemo() {
+            if (demoRunning || totalItems === 0) return;
+            demoRunning = true;
+            currentItem = 0;
+            successCount = 0;
+            failedCount = 0;
+
+            // Reset all cells
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.className = 'cell';
+            });
+
+            document.getElementById('statusMsg').textContent = 'Executing batch...';
+            document.getElementById('statusMsg').style.background = '#394457';
+            document.getElementById('statusMsg').style.color = '#8ab4f8';
+
+            processNext();
+        }
+
+        function processNext() {
+            if (!demoRunning || currentItem >= totalItems) {
+                if (currentItem >= totalItems) {
+                    document.getElementById('statusMsg').textContent = `Completed: ${successCount} success, ${failedCount} failed`;
+                    document.getElementById('statusMsg').style.background = '#2d4a3e';
+                    document.getElementById('statusMsg').style.color = '#81c995';
+                }
+                demoRunning = false;
+                updateStats();
+                return;
+            }
+
+            // Mark current cell as processing
+            const currentCell = document.querySelector(`.cell[data-index="${currentItem}"]`);
+            if (currentCell) {
+                currentCell.classList.add('current');
+            }
+
+            updateStats();
+
+            // Simulate processing time (faster for demo)
+            setTimeout(() => {
+                if (!demoRunning) return;
+
+                // 95% success rate
+                const success = Math.random() > 0.05;
+                
+                if (currentCell) {
+                    currentCell.classList.remove('current');
+                    if (success) {
+                        currentCell.classList.add('completed');
+                        successCount++;
+                    } else {
+                        currentCell.classList.add('failed');
+                        failedCount++;
+                    }
+                }
+
+                currentItem++;
+                processNext();
+            }, 30); // 30ms per item for demo speed
+        }
+
+        // Initialize with default
+        initDemo();
+    </script>
+</body>
+</html>
