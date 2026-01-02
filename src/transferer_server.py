@@ -53,6 +53,7 @@ change_state_status = {
     'message': ''
 }
 pending_change_state_items = []
+change_state_process = None  # Store subprocess for stop functionality
 
 # Receive specific state
 receive_status = {
@@ -63,6 +64,7 @@ receive_status = {
     'message': ''
 }
 pending_receive_items = []
+receive_process = None  # Store subprocess for stop functionality
 
 
 def get_automator():
@@ -140,14 +142,31 @@ def execute_single():
         return jsonify({'success': False, 'message': str(e)})
 
 # NOTE: Change Item State upload at /change-state/upload writes to receive.txt and runs change_item_state_auto.py
-# This /upload route is for Transfer: reads col A,B,C = from, to, imei
+# This /upload route is for Transfer: reads col A=from, B=to, C=imei starting from row 2
 
+# Transfer specific state
+transfer_status = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'current_item': None,
+    'message': ''
+}
+pending_transfer_items = []
+transfer_process = None  # Store subprocess for stop functionality
 
 
 @app.route('/upload', methods=['POST'])
 def upload_excel():
-    """Handle Excel file upload - reads from/to from row 1, IMEIs from column C"""
-    global pending_batch
+    """
+    Handle Excel file upload for Transfer.
+    
+    Excel format:
+    - Row 1: Header (ignored)
+    - Row 2+: Column A = From sublocation, Column B = To sublocation, Column C = IMEI
+    - From/To are read from first data row (row 2) and apply to all IMEIs
+    """
+    global pending_batch, pending_transfer_items
     
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'})
@@ -164,24 +183,24 @@ def upload_excel():
         wb = load_workbook(filename=io.BytesIO(file.read()))
         ws = wb.active
         
-        # Read from/to locations from first row only
-        first_row = None
-        for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
-            first_row = row
-            break
-        
-        if not first_row or not first_row[0] or not first_row[1]:
-            return jsonify({'success': False, 'message': 'First row must have From and To locations'})
-        
-        from_loc = str(first_row[0]).strip()
-        to_loc = str(first_row[1]).strip()
-        
-        # Collect all IMEIs from column C (handle numeric values from Excel)
+        # Read from row 2 (skip header in row 1)
+        # Get from/to from first data row, collect all IMEIs from column C
+        from_loc = None
+        to_loc = None
         imeis = []
-        for row in ws.iter_rows(min_row=1, values_only=True):
+        
+        for row in ws.iter_rows(min_row=2, values_only=True):
             # Ensure row has at least 3 columns (A, B, C)
             if not row or len(row) < 3:
                 continue
+            
+            # Get from/to from first data row
+            if from_loc is None and row[0] is not None:
+                from_loc = str(row[0]).strip()
+            if to_loc is None and row[1] is not None:
+                to_loc = str(row[1]).strip()
+            
+            # Collect IMEI from column C
             if row[2] is not None:
                 # Handle numeric IMEIs (Excel may read as float)
                 imei_val = row[2]
@@ -191,8 +210,11 @@ def upload_excel():
                 if imei_str:
                     imeis.append(imei_str)
         
+        if not from_loc or not to_loc:
+            return jsonify({'success': False, 'message': 'Row 2 must have From (A) and To (B) sublocations'})
+        
         if not imeis:
-            return jsonify({'success': False, 'message': 'No IMEIs found in column C'})
+            return jsonify({'success': False, 'message': 'No IMEIs found in column C (starting row 2)'})
         
         # Store batch data for execution
         pending_batch = {
@@ -200,10 +222,22 @@ def upload_excel():
             'to_loc': to_loc,
             'imeis': imeis
         }
+        pending_transfer_items = imeis
         
-        print(f"Loaded batch: {from_loc} -> {to_loc}, {len(imeis)} IMEIs")
-        for imei in imeis:
+        # Write to transfer_data.txt for transfer_auto.py
+        transfer_data_file = get_data_file_path('transfer_data.txt')
+        with open(transfer_data_file, 'w') as f:
+            f.write(f"{from_loc}\n")
+            f.write(f"{to_loc}\n")
+            for imei in imeis:
+                f.write(f"{imei}\n")
+        
+        print(f"Loaded transfer batch: {from_loc} -> {to_loc}, {len(imeis)} IMEIs")
+        print(f"Saved to {transfer_data_file}")
+        for imei in imeis[:5]:
             print(f"  IMEI: {imei}")
+        if len(imeis) > 5:
+            print(f"  ... and {len(imeis) - 5} more")
         
         # Return in format compatible with frontend
         transfers = [{'from': from_loc, 'to': to_loc, 'imei': imei} for imei in imeis]
@@ -277,18 +311,171 @@ def execute_batch():
     })
 
 
+def read_progress_file(filename):
+    """Read progress from a progress file. Returns (current, total) or None."""
+    try:
+        progress_file = get_data_file_path(filename)
+        if os.path.exists(progress_file):
+            with open(progress_file, 'r') as f:
+                content = f.read().strip()
+                if ',' in content:
+                    current, total = content.split(',')
+                    return int(current), int(total)
+    except:
+        pass
+    return None
+
+
+def execute_transfer_batch_worker(total):
+    """Background worker for batch Transfer execution - runs transfer_auto.py"""
+    global transfer_status, transfer_process
+    
+    script_path = str(_project_root / 'transfer_auto.py')
+    progress_file = 'transfer_progress.txt'
+    
+    try:
+        transfer_status['current'] = 0
+        transfer_status['total'] = total
+        transfer_status['message'] = 'Starting transfer_auto.py...'
+        
+        # Start the process (non-blocking)
+        transfer_process = subprocess.Popen(
+            [sys.executable, script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(_project_root)
+        )
+        
+        # Poll for progress while process is running
+        while transfer_process.poll() is None:
+            progress = read_progress_file(progress_file)
+            if progress:
+                current, _ = progress
+                transfer_status['current'] = current
+                transfer_status['message'] = f'Processing {current}/{total}...'
+            time.sleep(0.3)
+        
+        # Process finished
+        stdout, stderr = transfer_process.communicate()
+        
+        # Check if it was terminated (stopped by user)
+        if transfer_process.returncode == -9 or transfer_process.returncode == -15:
+            transfer_status['running'] = False
+            transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
+            transfer_status['result'] = {
+                'success': False,
+                'completed': transfer_status['current'],
+                'total': total,
+                'message': f'Stopped at {transfer_status["current"]}/{total}'
+            }
+        elif transfer_process.returncode == 0:
+            transfer_status['running'] = False
+            transfer_status['current'] = total
+            transfer_status['message'] = f'Completed all {total} transfers'
+            transfer_status['result'] = {
+                'success': True,
+                'completed': total,
+                'total': total,
+                'message': f'Completed all {total} transfers'
+            }
+        else:
+            transfer_status['running'] = False
+            transfer_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            transfer_status['result'] = {
+                'success': False,
+                'completed': transfer_status['current'],
+                'total': total,
+                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            }
+            
+    except Exception as e:
+        transfer_status['running'] = False
+        transfer_status['message'] = f'Error: {str(e)}'
+        transfer_status['result'] = {
+            'success': False,
+            'completed': 0,
+            'total': total,
+            'message': f'Error: {str(e)}'
+        }
+    finally:
+        transfer_process = None
+
+
+@app.route('/execute-transfer-batch', methods=['POST'])
+def execute_transfer_batch():
+    """Start batch execution of Transfer operations using transfer_auto.py"""
+    global transfer_status, pending_transfer_items
+    
+    if transfer_status['running']:
+        return jsonify({'success': False, 'message': 'Another execution is in progress'})
+    
+    if not pending_transfer_items:
+        return jsonify({'success': False, 'message': 'No items to execute. Upload Excel file first.'})
+    
+    total = len(pending_transfer_items)
+    
+    # Reset status
+    transfer_status = {
+        'running': True,
+        'current': 0,
+        'total': total,
+        'current_item': None,
+        'message': 'Starting batch execution...',
+        'result': None
+    }
+    
+    # Start background thread to run transfer_auto.py
+    thread = threading.Thread(target=execute_transfer_batch_worker, args=(total,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Started batch: {total} transfers'
+    })
+
+
+@app.route('/transfer-status-stream')
+def transfer_status_stream():
+    """Server-Sent Events stream for real-time Transfer status updates"""
+    def generate():
+        last_status = None
+        while True:
+            current = json.dumps(transfer_status)
+            if current != last_status:
+                yield f"data: {current}\n\n"
+                last_status = current
+            time.sleep(0.3)  # Poll every 300ms
+            
+            # Stop streaming if not running and we've sent the final status
+            if not transfer_status['running'] and last_status == current:
+                yield f"data: {current}\n\n"
+                break
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
 @app.route('/stop', methods=['POST'])
 def stop_execution():
-    """Stop the current batch execution"""
-    global execution_status
+    """Stop the current batch execution (supports both automator and script-based)"""
+    global execution_status, transfer_status, transfer_process
     
-    if not execution_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
+    # Check if transfer script is running
+    if transfer_status['running'] and transfer_process is not None:
+        try:
+            transfer_process.terminate()
+            transfer_status['message'] = 'Stopping...'
+            return jsonify({'success': True, 'message': 'Stop requested'})
+        except:
+            pass
     
-    auto = get_automator()
-    auto.request_stop()
+    # Check if automator-based execution is running
+    if execution_status['running']:
+        auto = get_automator()
+        auto.request_stop()
+        return jsonify({'success': True, 'message': 'Stop requested'})
     
-    return jsonify({'success': True, 'message': 'Stop requested'})
+    return jsonify({'success': False, 'message': 'No execution in progress'})
 
 
 @app.route('/pause', methods=['POST'])
@@ -526,25 +713,48 @@ def execute_single_change_state():
 
 def execute_change_state_batch_worker(items):
     """Background worker for batch Change Item State execution - runs change_item_state_auto.py"""
-    global change_state_status
+    global change_state_status, change_state_process
     
     total = len(items)
     script_path = str(_project_root / 'change_item_state_auto.py')
+    progress_file = 'change_state_progress.txt'
     
     try:
         change_state_status['current'] = 0
         change_state_status['total'] = total
         change_state_status['message'] = 'Starting change_item_state_auto.py...'
         
-        # Run the automation script
-        result = subprocess.run(
+        # Start the process (non-blocking)
+        change_state_process = subprocess.Popen(
             [sys.executable, script_path],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=str(_project_root)
         )
         
-        if result.returncode == 0:
+        # Poll for progress while process is running
+        while change_state_process.poll() is None:
+            progress = read_progress_file(progress_file)
+            if progress:
+                current, _ = progress
+                change_state_status['current'] = current
+                change_state_status['message'] = f'Processing {current}/{total}...'
+            time.sleep(0.3)
+        
+        # Process finished
+        stdout, stderr = change_state_process.communicate()
+        
+        # Check if it was terminated (stopped by user)
+        if change_state_process.returncode == -9 or change_state_process.returncode == -15:
+            change_state_status['running'] = False
+            change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
+            change_state_status['result'] = {
+                'success': False,
+                'completed': change_state_status['current'],
+                'total': total,
+                'message': f'Stopped at {change_state_status["current"]}/{total}'
+            }
+        elif change_state_process.returncode == 0:
             change_state_status['running'] = False
             change_state_status['current'] = total
             change_state_status['message'] = f'Completed all {total} items'
@@ -556,12 +766,12 @@ def execute_change_state_batch_worker(items):
             }
         else:
             change_state_status['running'] = False
-            change_state_status['message'] = f'Script error: {result.stderr}'
+            change_state_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
             change_state_status['result'] = {
                 'success': False,
-                'completed': 0,
+                'completed': change_state_status['current'],
                 'total': total,
-                'message': f'Script error: {result.stderr}'
+                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
             }
             
     except Exception as e:
@@ -573,6 +783,8 @@ def execute_change_state_batch_worker(items):
             'total': total,
             'message': f'Error: {str(e)}'
         }
+    finally:
+        change_state_process = None
 
 
 @app.route('/change-state/execute-batch', methods=['POST'])
@@ -614,13 +826,18 @@ def execute_change_state_batch():
 @app.route('/change-state/stop', methods=['POST'])
 def stop_change_state():
     """Stop the current Change Item State batch execution"""
-    global change_state_status
+    global change_state_status, change_state_process
     
     if not change_state_status['running']:
         return jsonify({'success': False, 'message': 'No execution in progress'})
     
-    auto = get_automator()
-    auto.request_stop()
+    # Terminate the subprocess if running
+    if change_state_process is not None:
+        try:
+            change_state_process.terminate()
+            change_state_status['message'] = 'Stopping...'
+        except:
+            pass
     
     return jsonify({'success': True, 'message': 'Stop requested'})
 
@@ -743,6 +960,8 @@ def upload_receive_excel():
       - Product name from B7+C7 applies to rows 7 through (7+N-1) = rows 7-11
       - IMEIs are in D7, D8, D9, D10, D11
       - Next item starts when a new quantity appears in column E (e.g., E12)
+    
+    Returns products for user to assign custom Product IDs before saving.
     """
     global pending_receive_items
     
@@ -819,55 +1038,195 @@ def upload_receive_excel():
         if not items:
             return jsonify({'success': False, 'message': 'No valid items found in Excel file (check format: QTY in column E starting at row 7, IMEIs in column D, product name in B+C)'})
         
-        # Store items for execution
+        # Store items for later (user needs to confirm product IDs first)
         pending_receive_items = items
         
-        # Write to receive_data.txt in format expected by receive_typing.py
-        # Format: Product name on one line, followed by IMEIs (one per line)
-        receive_data_file = get_data_file_path('receive_data.txt')
-        with open(receive_data_file, 'w') as f:
-            for item in items:
-                f.write(f"{item['product_name']}\n")
-                for imei in item['imeis']:
-                    f.write(f"{imei}\n")
-        
-        print(f"Loaded {len(items)} Receive items and wrote to receive_data.txt:")
         total_imeis = sum(len(item['imeis']) for item in items)
-        print(f"  Total: {len(items)} products, {total_imeis} IMEIs")
-        for item in items[:3]:  # Show first 3
+        print(f"Loaded {len(items)} products with {total_imeis} IMEIs (awaiting product ID confirmation):")
+        for item in items[:3]:
             print(f"  {item['product_name']}: {len(item['imeis'])} IMEIs")
         if len(items) > 3:
             print(f"  ... and {len(items) - 3} more products")
         
-        # Execute receive_typing.py in background
-        # Currently commented out - no execution needed until user presses receive all
-        # script_path = str(_project_root / 'receive_typing.py')
-        # subprocess.Popen([sys.executable, script_path], cwd=str(_project_root))
+        # Return products for user to assign custom Product IDs
+        # Do NOT write to receive_data.txt yet - wait for user confirmation
+        products_for_mapping = []
+        for i, item in enumerate(items):
+            products_for_mapping.append({
+                'index': i,
+                'detected_name': item['product_name'],
+                'imei_count': len(item['imeis']),
+                'custom_product_id': ''  # User will fill this in
+            })
         
-        # Prepare items list for frontend (flatten for display)
-        display_items = []
-        for item in items:
-            for imei in item['imeis']:
-                display_items.append({
-                    'imei': imei,
-                    'product_name': item['product_name']
-                })
-        
-        # Extract order metadata if available (from first row or other location)
-        # For now, return empty strings - can be enhanced later
         return jsonify({
             'success': True,
-            'message': f'Loaded {len(items)} products with {total_imeis} IMEIs (saved to receive_data.txt, executing receive_typing.py)',
-            'items': display_items,
-            'order_id': '',
-            'sublocation': '',
-            'product_id': ''
+            'message': f'Loaded {len(items)} products with {total_imeis} IMEIs',
+            'needs_product_mapping': True,
+            'products': products_for_mapping,
+            'total_imeis': total_imeis
         })
         
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error reading file: {str(e)}'})
+
+
+@app.route('/confirm-receive-products', methods=['POST'])
+def confirm_receive_products():
+    """
+    Confirm product ID mappings and save to receive_data.txt.
+    
+    Expects JSON:
+    {
+        "products": [
+            {"index": 0, "custom_product_id": "IPHONE 14 128GB BLACK"},
+            {"index": 1, "custom_product_id": "IPHONE 15 256GB WHITE"},
+            ...
+        ]
+    }
+    """
+    global pending_receive_items
+    
+    if not pending_receive_items:
+        return jsonify({'success': False, 'message': 'No pending items. Upload Excel file first.'})
+    
+    data = request.json
+    if not data or 'products' not in data:
+        return jsonify({'success': False, 'message': 'Missing product mappings'})
+    
+    product_mappings = data['products']
+    
+    # Validate all products have a custom_product_id
+    for mapping in product_mappings:
+        idx = mapping.get('index')
+        custom_id = mapping.get('custom_product_id', '').strip()
+        
+        if idx is None or idx >= len(pending_receive_items):
+            return jsonify({'success': False, 'message': f'Invalid product index: {idx}'})
+        
+        if not custom_id:
+            return jsonify({'success': False, 'message': f'Product {idx + 1} is missing a Product ID'})
+    
+    # Build the final items with user-provided product IDs
+    final_items = []
+    for mapping in product_mappings:
+        idx = mapping['index']
+        custom_id = mapping['custom_product_id'].strip()
+        original_item = pending_receive_items[idx]
+        
+        final_items.append({
+            'product_name': custom_id,  # Use user's custom product ID
+            'imeis': original_item['imeis']
+        })
+    
+    # Write to receive_data.txt with user-provided product IDs
+    receive_data_file = get_data_file_path('receive_data.txt')
+    with open(receive_data_file, 'w') as f:
+        for item in final_items:
+            f.write(f"{item['product_name']}\n")
+            for imei in item['imeis']:
+                f.write(f"{imei}\n")
+    
+    total_imeis = sum(len(item['imeis']) for item in final_items)
+    print(f"Saved {len(final_items)} products with {total_imeis} IMEIs to receive_data.txt:")
+    for item in final_items:
+        print(f"  {item['product_name']}: {len(item['imeis'])} IMEIs")
+    
+    # Update pending_receive_items with final product IDs
+    pending_receive_items = final_items
+    
+    # Prepare flattened items list for frontend display
+    display_items = []
+    for item in final_items:
+        for imei in item['imeis']:
+            display_items.append({
+                'imei': imei,
+                'product_name': item['product_name']
+            })
+    
+    return jsonify({
+        'success': True,
+        'message': f'Saved {len(final_items)} products with {total_imeis} IMEIs',
+        'items': display_items
+    })
+
+
+def execute_receive_batch_worker(items):
+    """Background worker for batch Receive execution - runs receive_typing.py"""
+    global receive_status, receive_process
+    
+    total = len(items)
+    script_path = str(_project_root / 'receive_typing.py')
+    progress_file = 'receive_progress.txt'
+    
+    try:
+        receive_status['current'] = 0
+        receive_status['total'] = total
+        receive_status['message'] = 'Starting receive_typing.py...'
+        
+        # Start the process (non-blocking)
+        receive_process = subprocess.Popen(
+            [sys.executable, script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(_project_root)
+        )
+        
+        # Poll for progress while process is running
+        while receive_process.poll() is None:
+            progress = read_progress_file(progress_file)
+            if progress:
+                current, _ = progress
+                receive_status['current'] = current
+                receive_status['message'] = f'Processing {current}/{total}...'
+            time.sleep(0.3)
+        
+        # Process finished
+        stdout, stderr = receive_process.communicate()
+        
+        # Check if it was terminated (stopped by user)
+        if receive_process.returncode == -9 or receive_process.returncode == -15:
+            receive_status['running'] = False
+            receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
+            receive_status['result'] = {
+                'success': False,
+                'completed': receive_status['current'],
+                'total': total,
+                'message': f'Stopped at {receive_status["current"]}/{total}'
+            }
+        elif receive_process.returncode == 0:
+            receive_status['running'] = False
+            receive_status['current'] = total
+            receive_status['message'] = f'Completed all {total} items'
+            receive_status['result'] = {
+                'success': True,
+                'completed': total,
+                'total': total,
+                'message': f'Completed all {total} receive operations'
+            }
+        else:
+            receive_status['running'] = False
+            receive_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            receive_status['result'] = {
+                'success': False,
+                'completed': receive_status['current'],
+                'total': total,
+                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            }
+            
+    except Exception as e:
+        receive_status['running'] = False
+        receive_status['message'] = f'Error: {str(e)}'
+        receive_status['result'] = {
+            'success': False,
+            'completed': 0,
+            'total': total,
+            'message': f'Error: {str(e)}'
+        }
+    finally:
+        receive_process = None
 
 
 @app.route('/execute-receive-batch', methods=['POST'])
@@ -881,27 +1240,39 @@ def execute_receive_batch():
     # Use items from request or pending items
     data = request.json or {}
     items = data.get('items', pending_receive_items)
+    sublocation = data.get('sublocation', '').strip()
     
     if not items:
         return jsonify({'success': False, 'message': 'No items to execute'})
     
-    # For receive batch, we already wrote to receive_data.txt and executed receive_typing.py
-    # So we just need to track the status
+    if not sublocation:
+        return jsonify({'success': False, 'message': 'Sublocation is required'})
+    
+    # Write sublocation to file for receive_typing.py to read
+    sublocation_file = get_data_file_path('receive_sublocation.txt')
+    with open(sublocation_file, 'w') as f:
+        f.write(sublocation)
+    
+    print(f"Receive batch: sublocation={sublocation}, {len(items)} items")
+    
+    # Reset status
     receive_status = {
         'running': True,
         'current': 0,
         'total': len(items),
         'current_item': None,
-        'message': 'Processing receive batch...',
+        'message': 'Starting batch execution...',
         'result': None
     }
     
-    # The actual execution is handled by receive_typing.py which is already running
-    # We'll update status as we can track it
+    # Start background thread to run receive_typing.py
+    thread = threading.Thread(target=execute_receive_batch_worker, args=(items,))
+    thread.daemon = True
+    thread.start()
     
     return jsonify({
         'success': True,
-        'message': f'Started batch: {len(items)} items'
+        'message': f'Started batch: {len(items)} items to {sublocation}'
     })
 
 
@@ -958,13 +1329,18 @@ def resume_receive():
 @app.route('/receive-stop', methods=['POST'])
 def stop_receive():
     """Stop the current Receive batch execution"""
-    global receive_status
+    global receive_status, receive_process
     
     if not receive_status['running']:
         return jsonify({'success': False, 'message': 'No execution in progress'})
     
-    auto = get_automator()
-    auto.request_stop()
+    # Terminate the subprocess if running
+    if receive_process is not None:
+        try:
+            receive_process.terminate()
+            receive_status['message'] = 'Stopping...'
+        except:
+            pass
     
     return jsonify({'success': True, 'message': 'Stop requested'})
 
@@ -974,4 +1350,4 @@ if __name__ == '__main__':
     print("TRANSFERER SERVER")
     print("Open http://localhost:5000 in your browser")
     print("=" * 50)
-    app.run(debug=True, port=5000, threaded=True)
+    app.run(debug=False, host='127.0.0.1', port=5000, threaded=True)

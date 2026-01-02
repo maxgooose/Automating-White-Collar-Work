@@ -164,6 +164,44 @@
         #transferList div.completed { background: #1f2d1f; color: #4ade80; }
         #transferList div.current { background: #2d2a1f; color: #fbbf24; }
         #transferList div.failed { background: #2d1f1f; color: #f87171; }
+        
+        /* Template image section */
+        .template-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .template-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+        .template-toggle:hover .template-title { color: #aaa; }
+        .template-title {
+            font-size: 13px;
+            color: #888;
+            transition: color 0.2s;
+        }
+        .template-arrow {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
+        }
+        .template-section.expanded .template-arrow { transform: rotate(90deg); }
+        .template-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .template-section.expanded .template-content { max-height: 600px; }
+        .template-img {
+            width: 100%;
+            margin-top: 12px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
     </style>
 </head>
 <body>
@@ -177,7 +215,7 @@
     <h1>Quick Transfer</h1>
     
     <div class="panel">
-        <div class="hint">A: From, B: To, C: IMEI</div>
+        <div class="hint">Excel: A2 = From Location, B2 = To Location, C = IMEIs</div>
         
         <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
             <svg class="dropzone-icon" viewBox="0 0 48 48">
@@ -210,9 +248,23 @@
         
         <div class="status" id="uploadStatus">No file loaded</div>
         <div id="transferList"></div>
+        
+        <!-- Template Example -->
+        <div class="template-section" id="templateSection">
+            <div class="template-toggle" onclick="toggleTemplate()">
+                <span class="template-title">Excel Format Example</span>
+                <span class="template-arrow">▶</span>
+            </div>
+            <div class="template-content">
+                <img class="template-img" src="/static/transferingTemplate.png" alt="Template Example">
+            </div>
+        </div>
     </div>
 
     <script>
+        function toggleTemplate() {
+            document.getElementById('templateSection').classList.toggle('expanded');
+        }
         let loadedTransfers = [];
         let eventSource = null;
         let isExecuting = false;
@@ -299,7 +351,7 @@
             isPaused = false;
             updateExecutionUI(true);
             
-            eventSource = new EventSource('/status-stream');
+            eventSource = new EventSource('/transfer-status-stream');
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 updateProgress(data);
@@ -315,7 +367,7 @@
             };
             eventSource.onerror = () => { eventSource.close(); isExecuting = false; updateExecutionUI(false); };
             
-            const res = await fetch('/execute-batch', {
+            const res = await fetch('/execute-transfer-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transfers: loadedTransfers })

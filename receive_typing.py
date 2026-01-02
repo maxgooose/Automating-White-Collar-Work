@@ -35,13 +35,32 @@ def press_enter():
     subprocess.run([ADB, "shell", "input", "keyevent", "KEYCODE_ENTER"], capture_output=True)
 
 
+def write_progress(current, total):
+    """Write progress to file for server to poll."""
+    progress_file = get_data_file_path("receive_progress.txt")
+    with open(progress_file, 'w') as f:
+        f.write(f"{current},{total}")
+
+
 def main():
     # Get data file path (cross-platform)
     data_file = get_data_file_path("receive_data.txt")
+    sublocation_file = get_data_file_path("receive_sublocation.txt")
     
     if not os.path.exists(data_file):
         print(f"ERROR: Data file not found: {data_file}")
         print("Upload an Excel file via the web interface first.")
+        sys.exit(1)
+    
+    # Read sublocation from file (required)
+    sublocation = ""
+    if os.path.exists(sublocation_file):
+        with open(sublocation_file, "r") as f:
+            sublocation = f.read().strip()
+    
+    if not sublocation:
+        print("ERROR: No sublocation found in receive_sublocation.txt")
+        print("Enter a sublocation in the web interface before executing.")
         sys.exit(1)
     
     # Read data from file
@@ -52,23 +71,36 @@ def main():
         print("ERROR: No data found in receive_data.txt")
         sys.exit(1)
     
+    total = len(items)
     print(f"ADB path: {ADB}")
-    print(f"Processing {len(items)} items...")
+    print(f"Sublocation: {sublocation}")
+    print(f"Processing {total} items...")
     print("-" * 40)
     
-    # First item handled separately
-    print(f"[1/{len(items)}] {items[0]}")
-    type_text(items[0])
+    # Initialize progress
+    write_progress(0, total)
+    
+    # Type sublocation first and press enter
+    print(f"[SUBLOCATION] {sublocation}")
+    type_text(sublocation)
     time.sleep(0.1)
     press_enter()
     time.sleep(0.1)
     
+    # First item handled separately
+    print(f"[1/{total}] {items[0]}")
+    type_text(items[0])
+    time.sleep(0.1)
+    press_enter()
+    time.sleep(0.1)
+    write_progress(1, total)
+    
     for i, item in enumerate(items[1:], 2):
-        print(f"[{i}/{len(items)}] {item}")
+        print(f"[{i}/{total}] {item}")
         
         # Special handling for iPad items
-        if item.lower().startswith('ipad'):
-            print("  iPad found - special handling")
+        if item.lower().startswith('ipad') or item.lower().startswith('good'):
+            print("  SKU  found - special handling")
             time.sleep(0.1)
             press_enter()
             print("  Enter pressed")
@@ -82,9 +114,12 @@ def main():
             time.sleep(0.1)
             press_enter()
             time.sleep(0.1)
+        
+        # Update progress after each item
+        write_progress(i, total)
     
     print("-" * 40)
-    print(f"DONE! Processed {len(items)} items.")
+    print(f"DONE! Processed {total} items.")
 
 
 if __name__ == "__main__":

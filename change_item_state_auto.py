@@ -37,6 +37,13 @@ DELAY_SCREEN = 0.25
 DELAY_AFTER_CONFIRM = 0.4
 
 
+def write_progress(current, total):
+    """Write progress to file for server to poll."""
+    progress_file = get_data_file_path("change_state_progress.txt")
+    with open(progress_file, 'w') as f:
+        f.write(f"{current},{total}")
+
+
 def run_adb(*args):
     """Run ADB command."""
     cmd = [ADB] + list(args)
@@ -213,12 +220,17 @@ def main():
     
     print("\nGO!")
     
+    # Initialize progress
+    write_progress(0, total)
+    
     # Navigate to Change Item State screen
     navigate_to_change_item_state()
     
     # Process each pair
     for i, (imei, product_id) in enumerate(pairs, 1):
         process_item(imei, product_id, i, total)
+        # Update progress after each item
+        write_progress(i, total)
     
     print(f"\n{'='*60}")
     print(f"ALL DONE! Processed {total} items.")
