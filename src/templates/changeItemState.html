@@ -4,420 +4,273 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Change Item State</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
         body { 
-            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #202124;
-            color: #e8eaed;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
             min-height: 100vh;
+            padding: 40px 20px;
         }
-
-        /* Top bar */
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 24px;
-            background: #202124;
-            border-bottom: 1px solid #3c4043;
-            position: sticky;
-            top: 0;
-            z-index: 100;
+        .back-link {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            background: #252525;
+            border: 1px solid #333;
+            transition: all 0.2s;
         }
-        
-        .topbar-left {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        
-        .back-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        
-        .back-btn:hover { background: #3c4043; }
-        
-        .back-btn svg {
-            width: 20px;
-            height: 20px;
-            fill: #9aa0a6;
-        }
-        
-        .page-title {
-            font-family: 'Google Sans', 'Roboto', sans-serif;
-            font-size: 18px;
-            font-weight: 400;
-            color: #e8eaed;
-        }
-        
-        .device-chip {
+        .back-link:hover { color: #fff; border-color: #444; }
+        .device-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 6px 12px;
-            background: #303134;
-            border-radius: 16px;
+            padding: 8px 14px;
+            background: #252525;
+            border: 1px solid #333;
+            border-radius: 8px;
             font-size: 12px;
-            color: #9aa0a6;
+            color: #888;
         }
-        
-        .device-chip .indicator {
+        .device-status .dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #ea4335;
+            background: #dc3545;
         }
-        
-        .device-chip.connected .indicator { background: #34a853; }
-
-        /* Main content */
-        .main {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 32px 24px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 32px;
-            align-items: start;
-        }
-
-        /* Card */
-        .card {
-            background: #303134;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        
-        .card-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid #3c4043;
-        }
-        
-        .card-title {
-            font-family: 'Google Sans', 'Roboto', sans-serif;
-            font-size: 16px;
+        .device-status.connected .dot { background: #28a745; }
+        h1 {
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
             font-weight: 500;
-            color: #e8eaed;
-            margin-bottom: 4px;
+            margin: 40px 0 30px;
         }
-        
-        .card-subtitle {
+        .panel {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #252525;
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid #333;
+        }
+        .hint {
             font-size: 13px;
-            color: #9aa0a6;
+            color: #666;
+            margin-bottom: 20px;
+            text-align: center;
         }
-        
-        .card-body {
-            padding: 24px;
-        }
-
-        /* Upload area */
-        .upload-area {
-            border: 2px solid #3c4043;
-            border-radius: 8px;
-            padding: 32px;
+        .dropzone {
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 40px 20px;
             text-align: center;
             cursor: pointer;
+            background: #1a1a1a;
             transition: all 0.2s;
-            background: #202124;
         }
-        
-        .upload-area:hover {
-            border-color: #5f6368;
-            background: #292a2d;
-        }
-        
-        .upload-area.dragover {
-            border-color: #8ab4f8;
-            background: #293645;
-        }
-        
-        .upload-icon {
+        .dropzone:hover { border-color: #555; background: #222; }
+        .dropzone.dragover { border-color: #666; background: #252525; }
+        .dropzone-icon {
             width: 48px;
             height: 48px;
-            margin: 0 auto 16px;
-            border-radius: 50%;
-            background: #3c4043;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            margin: 0 auto 12px;
+            opacity: 0.6;
         }
-        
-        .upload-icon svg {
-            width: 24px;
-            height: 24px;
-            fill: #8ab4f8;
-        }
-        
-        .upload-text {
-            font-size: 14px;
-            color: #e8eaed;
-            margin-bottom: 4px;
-        }
-        
-        .upload-hint {
-            font-size: 12px;
-            color: #9aa0a6;
-        }
-
+        .dropzone-text { color: #888; font-size: 14px; }
         input[type="file"] { display: none; }
-
-        /* Buttons */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 10px 24px;
-            font-family: 'Google Sans', 'Roboto', sans-serif;
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 16px;
             font-size: 14px;
             font-weight: 500;
-            border: none;
-            border-radius: 4px;
             cursor: pointer;
+            border: none;
+            border-radius: 8px;
             transition: all 0.2s;
-            min-height: 36px;
+            background: #333;
+            color: #fff;
         }
-        
-        .btn-filled {
-            background: #8ab4f8;
-            color: #202124;
-        }
-        
-        .btn-filled:hover { background: #aecbfa; }
-        .btn-filled:disabled { background: #3c4043; color: #5f6368; cursor: not-allowed; }
-        
-        .btn-tonal {
-            background: #394457;
-            color: #8ab4f8;
-        }
-        
-        .btn-tonal:hover { background: #435268; }
-        .btn-tonal:disabled { background: #303134; color: #5f6368; cursor: not-allowed; }
-        
-        .btn-text {
-            background: transparent;
-            color: #8ab4f8;
-            padding: 10px 12px;
-        }
-        
-        .btn-text:hover { background: #394457; }
-        
-        .btn-danger {
-            background: #5c3535;
-            color: #f28b82;
-        }
-        
-        .btn-danger:hover { background: #6b3f3f; }
-
+        button:hover:not(:disabled) { background: #444; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: #4ade80; color: #000; }
+        .btn-primary:hover:not(:disabled) { background: #3acd70; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover:not(:disabled) { background: #c82333; }
         .btn-row {
             display: flex;
-            gap: 12px;
-            margin-top: 20px;
+            gap: 10px;
+            margin-top: 16px;
         }
-        
-        .btn-row .btn { flex: 1; }
-
-        /* Progress */
-        .progress-section {
-            margin-top: 24px;
+        .btn-row button { flex: 1; margin-top: 0; }
+        .progress-container {
+            margin-top: 20px;
             display: none;
         }
-        
-        .progress-section.active { display: block; }
-        
-        .progress-label {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: #9aa0a6;
-            margin-bottom: 8px;
-        }
-        
-        .progress-track {
-            height: 4px;
-            background: #3c4043;
-            border-radius: 2px;
+        .progress-container.active { display: block; }
+        .progress-bar {
+            height: 8px;
+            background: #1a1a1a;
+            border-radius: 4px;
             overflow: hidden;
         }
-        
-        .progress-bar {
+        .progress-fill {
             height: 100%;
-            background: #8ab4f8;
-            border-radius: 2px;
+            background: #4ade80;
             transition: width 0.3s ease;
             width: 0%;
         }
-
-        /* Status */
-        .status-msg {
+        .progress-text {
+            font-size: 13px;
+            color: #888;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .status {
             margin-top: 16px;
             padding: 12px 16px;
+            background: #1a1a1a;
             border-radius: 8px;
             font-size: 13px;
-            background: #3c4043;
-            color: #9aa0a6;
+            text-align: center;
+            color: #888;
         }
+        .status.error { background: #2d1f1f; color: #f87171; }
+        .status.success { background: #1f2d1f; color: #4ade80; }
         
-        .status-msg.error { background: #5c3535; color: #f28b82; }
-        .status-msg.success { background: #2d4a3e; color: #81c995; }
-
-        /* Item list */
-        .item-list {
+        #itemList {
             margin-top: 16px;
-            max-height: 240px;
+            max-height: 200px;
             overflow-y: auto;
             border-radius: 8px;
-            background: #202124;
+            background: #1a1a1a;
         }
-        
-        .item-list:empty { display: none; }
-        
-        .item-list::-webkit-scrollbar { width: 8px; }
-        .item-list::-webkit-scrollbar-track { background: transparent; }
-        .item-list::-webkit-scrollbar-thumb { background: #5f6368; border-radius: 4px; }
-        
-        .item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-bottom: 1px solid #3c4043;
+        #itemList:empty { display: none; }
+        #itemList div {
+            padding: 10px 14px;
+            border-bottom: 1px solid #333;
             font-size: 13px;
+            color: #ccc;
+        }
+        #itemList div:last-child { border-bottom: none; }
+        #itemList div.completed { background: #1f2d1f; color: #4ade80; }
+        #itemList div.current { background: #2d2a1f; color: #fbbf24; }
+        #itemList div.failed { background: #2d1f1f; color: #f87171; }
+        #itemList .item-product {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
         }
         
-        .item:last-child { border-bottom: none; }
-        
-        .item-num {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: #3c4043;
+        /* Template image section */
+        .template-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .template-toggle {
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            color: #9aa0a6;
-            flex-shrink: 0;
+            justify-content: space-between;
+            cursor: pointer;
+            padding: 8px 0;
         }
-        
-        .item-content {
-            flex: 1;
-            min-width: 0;
+        .template-toggle:hover .template-title { color: #aaa; }
+        .template-title {
+            font-size: 13px;
+            color: #888;
+            transition: color 0.2s;
         }
-        
-        .item-imei {
-            color: #e8eaed;
-            font-family: 'Roboto Mono', monospace;
-            font-size: 12px;
+        .template-arrow {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
         }
-        
-        .item-product {
-            color: #9aa0a6;
-            font-size: 12px;
-            white-space: nowrap;
+        .template-section.expanded .template-arrow { transform: rotate(90deg); }
+        .template-content {
+            max-height: 0;
             overflow: hidden;
-            text-overflow: ellipsis;
+            transition: max-height 0.3s ease;
         }
-        
-        .item.completed .item-num { background: #2d4a3e; color: #81c995; }
-        .item.current .item-num { background: #394457; color: #8ab4f8; }
-        .item.failed .item-num { background: #5c3535; color: #f28b82; }
-
-        /* Template preview */
-        .template-card .card-body {
-            padding: 0;
-        }
-        
+        .template-section.expanded .template-content { max-height: 600px; }
         .template-img {
             width: 100%;
-            display: block;
-        }
-
-        /* Responsive */
-        @media (max-width: 900px) {
-            .main {
-                grid-template-columns: 1fr;
-            }
+            margin-top: 12px;
+            border-radius: 8px;
+            border: 1px solid #333;
         }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <div class="topbar-left">
-            <a href="/" class="back-btn">
-                <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-            </a>
-            <span class="page-title">Change Item State</span>
-        </div>
-        <div class="device-chip" id="deviceChip">
-            <span class="indicator"></span>
-            <span id="deviceText">Checking...</span>
-        </div>
+    <a href="/" class="back-link">Back</a>
+    
+    <div class="device-status" id="deviceStatus">
+        <span class="dot"></span>
+        <span id="deviceText">Checking...</span>
     </div>
-
-    <div class="main">
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">Upload Excel File</div>
-                <div class="card-subtitle">Column A: IMEI, Column B: New Product ID</div>
-            </div>
-            <div class="card-body">
-                <div class="upload-area" id="dropzone" onclick="document.getElementById('excelFile').click()">
-                    <div class="upload-icon">
-                        <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-                    </div>
-                    <div class="upload-text">Drop file here or click to browse</div>
-                    <div class="upload-hint">.xlsx or .xls files</div>
-                </div>
-                <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel()">
-
-                <div class="btn-row" id="batchButtons" style="display: none;">
-                    <button class="btn btn-filled" id="executeBatchBtn" onclick="executeBatch()">Execute All</button>
-                    <button class="btn btn-tonal" id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
-                    <button class="btn btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
-                </div>
-
-                <div class="progress-section" id="progressSection">
-                    <div class="progress-label">
-                        <span>Processing...</span>
-                        <span id="progressText">0 / 0</span>
-                    </div>
-                    <div class="progress-track">
-                        <div class="progress-bar" id="progressBar"></div>
-                    </div>
-                </div>
-
-                <div class="status-msg" id="statusMsg">No file loaded</div>
-                <div class="item-list" id="itemList"></div>
-            </div>
+    
+    <h1>Change Item State</h1>
+    
+    <div class="panel">
+        <div class="hint">Column A: IMEI, Column B: New Product ID (starting row 2)</div>
+        
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
+            <svg class="dropzone-icon" viewBox="0 0 48 48">
+                <rect x="8" y="4" width="32" height="40" rx="3" fill="#1D6F42"/>
+                <rect x="12" y="12" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="12" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="12" y="20" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="26" y="20" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="12" y="28" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="28" width="10" height="5" fill="white" opacity="0.6"/>
+            </svg>
+            <div class="dropzone-text">Drop Excel file or click to browse</div>
         </div>
-
-        <div class="card template-card">
-            <div class="card-header">
-                <div class="card-title">Template Example</div>
-                <div class="card-subtitle">Format your Excel file like this</div>
+        <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel()">
+        
+        <button onclick="uploadExcel()">Load File</button>
+        
+        <div class="btn-row" id="batchButtons" style="display: none;">
+            <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Execute All</button>
+            <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
+            <button class="btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
+        </div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
             </div>
-            <div class="card-body">
+            <div class="progress-text" id="progressText">0 / 0</div>
+        </div>
+        
+        <div class="status" id="uploadStatus">No file loaded</div>
+        <div id="itemList"></div>
+        
+        <!-- Template Example -->
+        <div class="template-section" id="templateSection">
+            <div class="template-toggle" onclick="toggleTemplate()">
+                <span class="template-title">Excel Format Example</span>
+                <span class="template-arrow">▶</span>
+            </div>
+            <div class="template-content">
                 <img class="template-img" src="/static/cis-template.png" alt="Template Example">
             </div>
         </div>
     </div>
 
     <script>
+        function toggleTemplate() {
+            document.getElementById('templateSection').classList.toggle('expanded');
+        }
         let loadedItems = [];
         let eventSource = null;
         let isExecuting = false;
@@ -430,10 +283,9 @@
             try {
                 const res = await fetch('/device-status');
                 const data = await res.json();
-                const chip = document.getElementById('deviceChip');
-                const text = document.getElementById('deviceText');
-                chip.className = 'device-chip' + (data.connected ? ' connected' : '');
-                text.textContent = data.connected ? 'Device connected' : 'No device';
+                const el = document.getElementById('deviceStatus');
+                el.className = 'device-status' + (data.connected ? ' connected' : '');
+                document.getElementById('deviceText').textContent = data.connected ? 'Connected' : 'No device';
             } catch (e) {
                 document.getElementById('deviceText').textContent = 'Error';
             }
@@ -454,27 +306,27 @@
         });
 
         async function uploadExcel() {
-            const status = document.getElementById('statusMsg');
+            const status = document.getElementById('uploadStatus');
             const list = document.getElementById('itemList');
             const batchBtns = document.getElementById('batchButtons');
             
             if (!fileInput.files.length) {
-                status.className = 'status-msg error';
-                status.textContent = 'Please select a file';
+                status.className = 'status error';
+                status.textContent = 'Select a file first';
                 return;
             }
             
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
             
-            status.className = 'status-msg';
-            status.textContent = 'Loading file...';
+            status.className = 'status';
+            status.textContent = 'Loading...';
             list.innerHTML = '';
             
             try {
                 const res = await fetch('/change-state/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                status.className = 'status-msg ' + (data.success ? 'success' : 'error');
+                status.className = 'status ' + (data.success ? 'success' : 'error');
                 status.textContent = data.message;
                 
                 if (data.success && data.items) {
@@ -483,7 +335,7 @@
                     batchBtns.style.display = 'flex';
                 }
             } catch (e) {
-                status.className = 'status-msg error';
+                status.className = 'status error';
                 status.textContent = 'Error: ' + e.message;
             }
         }
@@ -491,17 +343,14 @@
         function renderItemList(currentIndex = -1, completedCount = 0, failedIndex = -1) {
             const list = document.getElementById('itemList');
             list.innerHTML = loadedItems.map((item, i) => {
-                let cls = 'item';
-                if (failedIndex === i) cls += ' failed';
-                else if (i < completedCount) cls += ' completed';
-                else if (i === currentIndex) cls += ' current';
-                const pid = item.new_product_id.length > 35 ? item.new_product_id.substring(0, 35) + '...' : item.new_product_id;
+                let cls = '';
+                if (failedIndex === i) cls = 'failed';
+                else if (i < completedCount) cls = 'completed';
+                else if (i === currentIndex) cls = 'current';
+                const pid = item.new_product_id.length > 40 ? item.new_product_id.substring(0, 40) + '...' : item.new_product_id;
                 return `<div class="${cls}">
-                    <span class="item-num">${i+1}</span>
-                    <div class="item-content">
-                        <div class="item-imei">${item.imei}</div>
-                        <div class="item-product">${pid}</div>
-                    </div>
+                    <strong>${i+1}.</strong> ${item.imei}
+                    <div class="item-product">→ ${pid}</div>
                 </div>`;
             }).join('');
         }
@@ -521,8 +370,8 @@
                     isExecuting = false;
                     updateExecutionUI(false);
                     if (data.result) {
-                        document.getElementById('statusMsg').className = 'status-msg ' + (data.result.success ? 'success' : 'error');
-                        document.getElementById('statusMsg').textContent = data.result.message;
+                        document.getElementById('uploadStatus').className = 'status ' + (data.result.success ? 'success' : 'error');
+                        document.getElementById('uploadStatus').textContent = data.result.message;
                     }
                 }
             };
@@ -535,8 +384,8 @@
             });
             const data = await res.json();
             if (!data.success) {
-                document.getElementById('statusMsg').className = 'status-msg error';
-                document.getElementById('statusMsg').textContent = data.message;
+                document.getElementById('uploadStatus').className = 'status error';
+                document.getElementById('uploadStatus').textContent = data.message;
                 eventSource.close();
                 isExecuting = false;
                 updateExecutionUI(false);
@@ -558,13 +407,13 @@
 
         async function stopExecution() {
             await fetch('/change-state/stop', { method: 'POST' });
-            document.getElementById('statusMsg').textContent = 'Stopping...';
+            document.getElementById('uploadStatus').textContent = 'Stopping...';
         }
 
         function updateProgress(data) {
-            document.getElementById('progressSection').classList.add('active');
+            document.getElementById('progressContainer').classList.add('active');
             const pct = data.total > 0 ? (data.current / data.total) * 100 : 0;
-            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressFill').style.width = pct + '%';
             document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
             if (data.current > 0) renderItemList(data.current - 1, data.current - 1);
         }

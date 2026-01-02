@@ -55,7 +55,7 @@
             margin: 40px 0 30px;
         }
         .panel {
-            max-width: 480px;
+            max-width: 600px;
             margin: 0 auto;
             background: #252525;
             border-radius: 12px;
@@ -104,6 +104,8 @@
         button:disabled { opacity: 0.4; cursor: not-allowed; }
         .btn-primary { background: #4ade80; color: #000; }
         .btn-primary:hover:not(:disabled) { background: #3acd70; }
+        .btn-secondary { background: #3b82f6; color: #fff; }
+        .btn-secondary:hover:not(:disabled) { background: #2563eb; }
         .btn-danger { background: #dc3545; }
         .btn-danger:hover:not(:disabled) { background: #c82333; }
         .btn-row {
@@ -146,6 +148,73 @@
         }
         .status.error { background: #2d1f1f; color: #f87171; }
         .status.success { background: #1f2d1f; color: #4ade80; }
+        
+        /* Product Mapping Section */
+        #productMappingSection {
+            display: none;
+            margin-top: 20px;
+        }
+        #productMappingSection.active { display: block; }
+        .mapping-header {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+        }
+        .product-mapping-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .product-mapping-item {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 10px;
+            border: 1px solid #333;
+        }
+        .product-mapping-item:last-child { margin-bottom: 0; }
+        .product-detected {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .product-detected strong {
+            color: #aaa;
+        }
+        .product-imei-count {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .product-input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .product-input-label {
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+        }
+        .product-input {
+            flex: 1;
+            padding: 10px 12px;
+            font-size: 13px;
+            background: #252525;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            outline: none;
+        }
+        .product-input:focus {
+            border-color: #4ade80;
+        }
+        .product-input::placeholder {
+            color: #555;
+        }
+        
         #receiveList {
             margin-top: 16px;
             max-height: 200px;
@@ -164,10 +233,48 @@
         #receiveList div.completed { background: #1f2d1f; color: #4ade80; }
         #receiveList div.current { background: #2d2a1f; color: #fbbf24; }
         #receiveList div.failed { background: #2d1f1f; color: #f87171; }
+        
+        /* Template image section */
+        .template-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .template-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+        .template-toggle:hover .template-title { color: #aaa; }
+        .template-title {
+            font-size: 13px;
+            color: #888;
+            transition: color 0.2s;
+        }
+        .template-arrow {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
+        }
+        .template-section.expanded .template-arrow { transform: rotate(90deg); }
+        .template-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .template-section.expanded .template-content { max-height: 1000px; }
+        .template-img {
+            width: 100%;
+            margin-top: 12px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
     </style>
 </head>
 <body>
-    <a href="/" class="back-link">← Home</a>
+    <a href="/" class="back-link">Back</a>
     
     <div class="device-status" id="deviceStatus">
         <span class="dot"></span>
@@ -177,7 +284,7 @@
     <h1>Quick Receive</h1>
     
     <div class="panel">
-        <div class="hint">Row 7+: B+C = Product, D = IMEI, E = QTY</div>
+        <div class="hint">Save the packing slip as .xlsx then upload it</div>
         
         <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
             <svg class="dropzone-icon" viewBox="0 0 48 48">
@@ -195,6 +302,24 @@
         
         <button onclick="uploadExcel()">Load File</button>
         
+        <!-- Product Mapping Section -->
+        <div id="productMappingSection">
+            <div class="mapping-header">Assign Product IDs for Receive</div>
+            <div class="product-mapping-list" id="productMappingList"></div>
+            <button class="btn-secondary" id="confirmProductsBtn" onclick="confirmProducts()">Confirm Product IDs</button>
+        </div>
+        
+        <!-- Sublocation Input Section -->
+        <div id="sublocationSection" style="display: none; margin-top: 20px;">
+            <div class="mapping-header">Receive Sublocation</div>
+            <div class="product-input-row" style="margin-bottom: 12px;">
+                <span class="product-input-label">Sublocation:</span>
+                <input type="text" class="product-input" id="sublocationInput" 
+                       placeholder="Enter sublocation for all items..." 
+                       onkeydown="if(event.key==='Enter'){executeBatch();}">
+            </div>
+        </div>
+        
         <div class="btn-row" id="batchButtons" style="display: none;">
             <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Receive All</button>
             <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
@@ -210,10 +335,25 @@
         
         <div class="status" id="uploadStatus">No file loaded</div>
         <div id="receiveList"></div>
+        
+        <!-- Template Example -->
+        <div class="template-section" id="templateSection">
+            <div class="template-toggle" onclick="toggleTemplate()">
+                <span class="template-title">Excel Format Example (Packing Slip)</span>
+                <span class="template-arrow">▶</span>
+            </div>
+            <div class="template-content">
+                <img class="template-img" src="/static/receivingTemplate.png" alt="Template Example">
+            </div>
+        </div>
     </div>
 
     <script>
+        function toggleTemplate() {
+            document.getElementById('templateSection').classList.toggle('expanded');
+        }
         let loadedItems = [];
+        let pendingProducts = [];
         let eventSource = null;
         let isExecuting = false;
         let isPaused = false;
@@ -251,6 +391,7 @@
             const status = document.getElementById('uploadStatus');
             const list = document.getElementById('receiveList');
             const batchBtns = document.getElementById('batchButtons');
+            const mappingSection = document.getElementById('productMappingSection');
             
             if (!fileInput.files.length) {
                 status.className = 'status error';
@@ -264,17 +405,134 @@
             status.className = 'status';
             status.textContent = 'Loading...';
             list.innerHTML = '';
+            batchBtns.style.display = 'none';
+            mappingSection.classList.remove('active');
             
             try {
                 const res = await fetch('/upload-receive', { method: 'POST', body: formData });
                 const data = await res.json();
-                status.className = 'status ' + (data.success ? 'success' : 'error');
-                status.textContent = data.message;
                 
-                if (data.success && data.items) {
+                if (data.success && data.needs_product_mapping) {
+                    // Show product mapping UI
+                    pendingProducts = data.products;
+                    renderProductMapping(data.products);
+                    mappingSection.classList.add('active');
+                    status.className = 'status success';
+                    status.textContent = `${data.products.length} products detected with ${data.total_imeis} IMEIs. Enter Product IDs below.`;
+                } else if (data.success && data.items) {
+                    // Direct display (legacy flow)
                     loadedItems = data.items;
                     renderReceiveList();
                     batchBtns.style.display = 'flex';
+                    status.className = 'status success';
+                    status.textContent = data.message;
+                } else {
+                    status.className = 'status error';
+                    status.textContent = data.message;
+                }
+            } catch (e) {
+                status.className = 'status error';
+                status.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function renderProductMapping(products) {
+            const list = document.getElementById('productMappingList');
+            list.innerHTML = products.map((p, i) => `
+                <div class="product-mapping-item">
+                    <div class="product-detected">Detected: <strong>${escapeHtml(p.detected_name)}</strong></div>
+                    <div class="product-imei-count">${p.imei_count} IMEI${p.imei_count !== 1 ? 's' : ''}</div>
+                    <div class="product-input-row">
+                        <span class="product-input-label">Product ID:</span>
+                        <input type="text" class="product-input" id="productId_${i}" 
+                               placeholder="Enter product ID for receive..." 
+                               data-index="${i}"
+                               onkeydown="handleProductInputKey(event, ${i})">
+                    </div>
+                </div>
+            `).join('');
+            
+            // Focus first input
+            setTimeout(() => {
+                const firstInput = document.getElementById('productId_0');
+                if (firstInput) firstInput.focus();
+            }, 100);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function handleProductInputKey(event, index) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                // Move to next input or confirm if last
+                const nextInput = document.getElementById(`productId_${index + 1}`);
+                if (nextInput) {
+                    nextInput.focus();
+                } else {
+                    confirmProducts();
+                }
+            }
+        }
+
+        async function confirmProducts() {
+            const status = document.getElementById('uploadStatus');
+            const mappingSection = document.getElementById('productMappingSection');
+            const batchBtns = document.getElementById('batchButtons');
+            
+            // Gather product ID mappings
+            const products = [];
+            let hasError = false;
+            
+            for (let i = 0; i < pendingProducts.length; i++) {
+                const input = document.getElementById(`productId_${i}`);
+                const customId = input.value.trim();
+                
+                if (!customId) {
+                    input.style.borderColor = '#dc3545';
+                    hasError = true;
+                } else {
+                    input.style.borderColor = '#444';
+                    products.push({
+                        index: i,
+                        custom_product_id: customId
+                    });
+                }
+            }
+            
+            if (hasError) {
+                status.className = 'status error';
+                status.textContent = 'Please enter Product ID for all products';
+                return;
+            }
+            
+            status.className = 'status';
+            status.textContent = 'Saving...';
+            
+            try {
+                const res = await fetch('/confirm-receive-products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ products })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    loadedItems = data.items;
+                    renderReceiveList();
+                    mappingSection.classList.remove('active');
+                    document.getElementById('sublocationSection').style.display = 'block';
+                    batchBtns.style.display = 'flex';
+                    status.className = 'status success';
+                    status.textContent = data.message + ' - Enter sublocation and click Receive All';
+                    // Focus sublocation input
+                    setTimeout(() => document.getElementById('sublocationInput').focus(), 100);
+                } else {
+                    status.className = 'status error';
+                    status.textContent = data.message;
                 }
             } catch (e) {
                 status.className = 'status error';
@@ -295,6 +553,19 @@
 
         async function executeBatch() {
             if (!loadedItems.length) return;
+            
+            // Validate sublocation
+            const sublocationInput = document.getElementById('sublocationInput');
+            const sublocation = sublocationInput.value.trim();
+            if (!sublocation) {
+                sublocationInput.style.borderColor = '#dc3545';
+                document.getElementById('uploadStatus').className = 'status error';
+                document.getElementById('uploadStatus').textContent = 'Please enter a sublocation';
+                sublocationInput.focus();
+                return;
+            }
+            sublocationInput.style.borderColor = '#444';
+            
             isExecuting = true;
             isPaused = false;
             updateExecutionUI(true);
@@ -318,7 +589,7 @@
             const res = await fetch('/execute-receive-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: loadedItems })
+                body: JSON.stringify({ items: loadedItems, sublocation: sublocation })
             });
             const data = await res.json();
             if (!data.success) {
