@@ -292,7 +292,8 @@ class FinaleAutomator(AndroidController):
     MENU_ITEM_2_Y = 280   # Item 2 or 6
     MENU_ITEM_3_Y = 375   # Item 3 or 7
     MENU_ITEM_4_Y = 470   # Item 4 or 8
-    
+    MENU_ITEM_5_Y = 565
+    MENU_ITEM_6_Y = 660
     # Confirmation dialog buttons (Change item state screen)
     CONFIRM_DIALOG_Y = 580         # Y position for both buttons
     CONFIRM_DIALOG_BACK_X = 245    # Back button (left)
@@ -597,6 +598,70 @@ class FinaleAutomator(AndroidController):
         self._current_to = None
         self._stop_requested = False
         self._pause_requested = False
+    
+    def reset_all_data(self) -> dict:
+        """
+        Reset all data in the Finale app using menu navigation.
+        
+        Flow:
+        1. Press menu button
+        2. Press enter
+        3. 11 clicks down (navigate to reset option)
+        4. Press enter
+        5. Press "All" button (same location as confirm)
+        6. Press "Yes" button (to the left of "All")
+        
+        Returns:
+            dict with 'success' and 'message' keys
+        """
+        try:
+            print("\n=== RESETTING ALL DATA ===")
+            
+            # Step 1: Press menu button
+            print("Step 1: Press MENU button...")
+            self.tap_more_button()
+            time.sleep(self.DELAY_AFTER_TAP)
+            
+            # Step 2: Press enter
+            print("Step 2: Press ENTER...")
+            self.tap_enter_button()
+            time.sleep(self.DELAY_AFTER_TAP)
+            
+            # Step 3: 11 clicks down to navigate to reset option
+            print("Step 3: Navigating down 11 times...")
+            for i in range(11):
+                self.press_key("KEYCODE_DPAD_DOWN")
+                time.sleep(0.2)
+            time.sleep(self.DELAY_AFTER_TAP)
+            
+            # Step 4: Press enter to select reset option
+            print("Step 4: Press ENTER to select...")
+            self.tap_enter_button()
+            time.sleep(self.DELAY_SCREEN_TRANSITION)
+            
+            # Step 5: Press "All" button (same location as confirm button)
+            print("Step 5: Press ALL button...")
+            self.tap_confirm_button()
+            time.sleep(self.DELAY_AFTER_TAP)
+            
+            # Step 6: Press "Yes" button (to the left of "All", same as back button)
+            print("Step 6: Press YES to confirm reset...")
+            self.tap_confirm_back_button()
+            time.sleep(self.DELAY_SCREEN_TRANSITION)
+            
+            print("=== RESET COMPLETE ===\n")
+            
+            return {
+                'success': True,
+                'message': 'Reset all data completed successfully'
+            }
+            
+        except Exception as e:
+            print(f"ERROR during reset: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Reset failed: {str(e)}'
+            }
     
     # ========== CHANGE ITEM STATE ==========
     

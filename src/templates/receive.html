@@ -108,6 +108,8 @@
         .btn-secondary:hover:not(:disabled) { background: #2563eb; }
         .btn-danger { background: #dc3545; }
         .btn-danger:hover:not(:disabled) { background: #c82333; }
+        .btn-warning { background: #6366f1; }
+        .btn-warning:hover:not(:disabled) { background: #4f46e5; }
         .btn-row {
             display: flex;
             gap: 10px;
@@ -230,9 +232,6 @@
             color: #ccc;
         }
         #receiveList div:last-child { border-bottom: none; }
-        #receiveList div.completed { background: #1f2d1f; color: #4ade80; }
-        #receiveList div.current { background: #2d2a1f; color: #fbbf24; }
-        #receiveList div.failed { background: #2d1f1f; color: #f87171; }
         
         /* Template image section */
         .template-section {
@@ -324,6 +323,7 @@
             <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Receive All</button>
             <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
             <button class="btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
+            <button class="btn-warning" id="resetBtn" onclick="resetDevice()">Reset</button>
         </div>
         
         <div class="progress-container" id="progressContainer">
@@ -357,6 +357,8 @@
         let eventSource = null;
         let isExecuting = false;
         let isPaused = false;
+        let isStopped = false;
+        const originalExecuteBtnText = 'Receive All';
 
         checkDeviceStatus();
         setInterval(checkDeviceStatus, 5000);
@@ -543,11 +545,7 @@
         function renderReceiveList(currentIndex = -1, completedCount = 0, failedIndex = -1) {
             const list = document.getElementById('receiveList');
             list.innerHTML = loadedItems.map((item, i) => {
-                let cls = '';
-                if (failedIndex === i) cls = 'failed';
-                else if (i < completedCount) cls = 'completed';
-                else if (i === currentIndex) cls = 'current';
-                return `<div class="${cls}"><strong>${i+1}.</strong> ${item.imei}</div>`;
+                return `<div><strong>${i+1}.</strong> ${item.imei}</div>`;
             }).join('');
         }
 
@@ -568,7 +566,13 @@
             
             isExecuting = true;
             isPaused = false;
+            isStopped = false;
             updateExecutionUI(true);
+            
+            // Initialize progress bar to 1/total immediately
+            document.getElementById('progressContainer').classList.add('active');
+            document.getElementById('progressFill').style.width = (1 / loadedItems.length * 100) + '%';
+            document.getElementById('progressText').textContent = `1 / ${loadedItems.length}`;
             
             eventSource = new EventSource('/receive-status-stream');
             eventSource.onmessage = (event) => {
@@ -617,21 +621,61 @@
         async function stopExecution() {
             await fetch('/receive-stop', { method: 'POST' });
             document.getElementById('uploadStatus').textContent = 'Stopping...';
+            isStopped = true;
+            updateExecutionUI(false);
+        }
+
+        async function resetDevice() {
+            const status = document.getElementById('uploadStatus');
+            const resetBtn = document.getElementById('resetBtn');
+            
+            resetBtn.disabled = true;
+            resetBtn.textContent = 'Resetting...';
+            status.textContent = 'Resetting device...';
+            status.className = 'status';
+            
+            try {
+                const res = await fetch('/reset', { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    status.textContent = data.message;
+                    status.className = 'status success';
+                } else {
+                    status.textContent = data.message;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = 'Reset failed: ' + e.message;
+                status.className = 'status error';
+            } finally {
+                resetBtn.disabled = false;
+                resetBtn.textContent = 'Reset';
+                updateExecutionUI(false);
+            }
         }
 
         function updateProgress(data) {
             document.getElementById('progressContainer').classList.add('active');
             const pct = data.total > 0 ? (data.current / data.total) * 100 : 0;
             document.getElementById('progressFill').style.width = pct + '%';
-            document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
+            const displayCurrent = data.total > 0 ? Math.max(1, data.current) : 0;
+            document.getElementById('progressText').textContent = `${displayCurrent} / ${data.total}`;
             if (data.current > 0) renderReceiveList(data.current - 1, data.current - 1);
         }
 
         function updateExecutionUI(exec) {
-            document.getElementById('executeBatchBtn').disabled = exec;
+            const executeBtn = document.getElementById('executeBatchBtn');
+            executeBtn.disabled = exec;
             document.getElementById('pauseBtn').disabled = !exec;
             document.getElementById('stopBtn').disabled = !exec;
-            if (!exec) document.getElementById('pauseBtn').textContent = 'Pause';
+            if (!exec) {
+                document.getElementById('pauseBtn').textContent = 'Pause';
+                // Change button text to "Resume" if stopped, otherwise restore original text
+                executeBtn.textContent = isStopped ? 'Resume' : originalExecuteBtnText;
+            } else {
+                executeBtn.textContent = originalExecuteBtnText;
+            }
         }
     </script>
 </body>

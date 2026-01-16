@@ -20,6 +20,7 @@ import subprocess
 import time
 import sys
 import os
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Add src to path for imports
@@ -73,6 +74,79 @@ def press_down():
     run_adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
     time.sleep(0.02)
 
+def get_focused_text():
+    """Return text from currently focused input field or EditText."""
+    run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
+    ui_xml = run_adb("shell", "cat", "/sdcard/ui.xml")
+    run_adb("shell", "rm", "/sdcard/ui.xml")
+    if not ui_xml:
+        return None
+    try:
+        root = ET.fromstring(ui_xml)
+    except ET.ParseError:
+        return None
+    # First try: element with focused="true"
+    for elem in root.iter("node"):
+        if elem.attrib.get("focused") == "true":
+            return elem.attrib.get("text", "")
+    # Fallback: find EditText fields (common on Pixel/modern Android)
+    for elem in root.iter("node"):
+        class_name = elem.attrib.get("class", "")
+        if "EditText" in class_name:
+            return elem.attrib.get("text", "")
+    return None
+
+
+def clear_focused_field(max_len):
+    """Clear focused field by deleting characters."""
+    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    for _ in range(max_len + 5):
+        run_adb("shell", "input", "keyevent", "KEYCODE_DEL")
+
+
+def type_imei_with_verify(imei, max_retries=5, delay=0.12):
+    """Type IMEI and verify before pressing enter."""
+    expected = imei.replace(" ", "")
+    for attempt in range(1, max_retries + 1):
+        clear_focused_field(len(expected))
+        type_text(expected)
+        time.sleep(delay)
+        focused = get_focused_text()
+        if focused is None:
+            print(f"  WARNING: Unable to read focused field (attempt {attempt}/{max_retries})")
+            delay = min(delay + 0.05, 0.5)
+            continue
+        if focused.replace(" ", "") == expected:
+            return True
+        print(f"  WARNING: IMEI mismatch (attempt {attempt}/{max_retries}) -> '{focused}'")
+        delay = min(delay + 0.05, 0.5)
+    return False
+
+
+def detect_error_screen():
+    """
+    Detect known error UI by scanning UIAutomator text.
+    Looks for barcode echo and common error keywords.
+    """
+    run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
+    ui_xml = run_adb("shell", "cat", "/sdcard/ui.xml")
+    run_adb("shell", "rm", "/sdcard/ui.xml")
+    if not ui_xml:
+        return False
+    try:
+        root = ET.fromstring(ui_xml)
+    except ET.ParseError:
+        return False
+
+    keywords = ("error", "invalid", "failed", "barcode:")
+    for elem in root.iter("node"):
+        text = (elem.attrib.get("text", "") or "").strip().lower()
+        desc = (elem.attrib.get("content-desc", "") or "").strip().lower()
+        combined = f"{text} {desc}"
+        if any(k in combined for k in keywords):
+            return True
+    return False
+
 
 def navigate_to_transfer():
     """
@@ -103,6 +177,44 @@ def navigate_to_transfer():
     
     print("=== NAVIGATION COMPLETE ===\n")
 
+def normalize_imei(raw_value):
+    """Normalize a single IMEI line (no validation)."""
+    if raw_value is None:
+        return None
+    cleaned = raw_value.strip()
+    if not cleaned:
+        return None
+    return cleaned
+
+
+def load_transfer_data(data_file):
+    """Load transfer data from file."""
+    with open(data_file, "r") as f:
+        raw_lines = [line.strip() for line in f if line.strip()]
+
+    if len(raw_lines) < 3:
+        return None, "transfer_data.txt must have at least 3 lines (from, to, and at least one IMEI)"
+
+    from_loc = raw_lines[0]
+    to_loc = raw_lines[1]
+    raw_imeis = raw_lines[2:]
+
+    if not from_loc or not to_loc:
+        return None, "from/to sublocation cannot be empty"
+
+    imeis = []
+    for raw in raw_imeis:
+        imei = normalize_imei(raw)
+        if not imei:
+            continue
+        imeis.append(imei)
+
+    return {
+        "from_loc": from_loc,
+        "to_loc": to_loc,
+        "imeis": imeis,
+    }, None
+
 
 def main():
     """Main automation loop."""
@@ -114,18 +226,17 @@ def main():
         print("Upload an Excel file via the web interface first.")
         sys.exit(1)
     
-    # Read data from file
-    with open(data_file, "r") as f:
-        lines = [line.strip() for line in f if line.strip()]
-    
-    if len(lines) < 3:
-        print("ERROR: transfer_data.txt must have at least 3 lines (from, to, and at least one IMEI)")
+    data, error = load_transfer_data(data_file)
+    if error:
+        print(f"ERROR: {error}")
         sys.exit(1)
-    
-    # Parse data
-    from_loc = lines[0]
-    to_loc = lines[1]
-    imeis = lines[2:]
+
+    from_loc = data["from_loc"]
+    to_loc = data["to_loc"]
+    imeis = data["imeis"]
+    if not imeis:
+        print("ERROR: No valid IMEIs found in transfer_data.txt")
+        sys.exit(1)
     
     total = len(imeis)
     print(f"\n{'='*60}")
@@ -168,10 +279,14 @@ def main():
     # Type each IMEI + ENTER
     for i, imei in enumerate(imeis, 1):
         print(f"[{i}/{total}] {imei}")
-        type_text(imei)
-        time.sleep(DELAY_TYPE)
+        if not type_imei_with_verify(imei):
+            print("ERROR: Unable to verify IMEI in input field. Stopping to avoid wrong entry.")
+            sys.exit(1)
         press_enter()
         time.sleep(0.3)
+        if detect_error_screen():
+            print("ERROR: Error screen detected after submit. Stopping to avoid wrong entry.")
+            sys.exit(1)
         # Update progress after each IMEI
         write_progress(i, total)
     

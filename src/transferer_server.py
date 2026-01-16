@@ -369,7 +369,6 @@ def execute_transfer_batch_worker(total):
                 'message': f'Stopped at {transfer_status["current"]}/{total}'
             }
         elif transfer_process.returncode == 0:
-            transfer_status['running'] = False
             transfer_status['current'] = total
             transfer_status['message'] = f'Completed all {total} transfers'
             transfer_status['result'] = {
@@ -378,6 +377,7 @@ def execute_transfer_batch_worker(total):
                 'total': total,
                 'message': f'Completed all {total} transfers'
             }
+            transfer_status['running'] = False  # Set last to avoid race condition
         else:
             transfer_status['running'] = False
             transfer_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
@@ -755,7 +755,6 @@ def execute_change_state_batch_worker(items):
                 'message': f'Stopped at {change_state_status["current"]}/{total}'
             }
         elif change_state_process.returncode == 0:
-            change_state_status['running'] = False
             change_state_status['current'] = total
             change_state_status['message'] = f'Completed all {total} items'
             change_state_status['result'] = {
@@ -764,6 +763,7 @@ def execute_change_state_batch_worker(items):
                 'total': total,
                 'message': f'Completed all {total} item state changes'
             }
+            change_state_status['running'] = False  # Set last to avoid race condition
         else:
             change_state_status['running'] = False
             change_state_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
@@ -1197,7 +1197,6 @@ def execute_receive_batch_worker(items):
                 'message': f'Stopped at {receive_status["current"]}/{total}'
             }
         elif receive_process.returncode == 0:
-            receive_status['running'] = False
             receive_status['current'] = total
             receive_status['message'] = f'Completed all {total} items'
             receive_status['result'] = {
@@ -1206,6 +1205,7 @@ def execute_receive_batch_worker(items):
                 'total': total,
                 'message': f'Completed all {total} receive operations'
             }
+            receive_status['running'] = False  # Set last to avoid race condition
         else:
             receive_status['running'] = False
             receive_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
@@ -1343,6 +1343,85 @@ def stop_receive():
             pass
     
     return jsonify({'success': True, 'message': 'Stop requested'})
+
+
+# ============================================================
+# RESET ROUTE
+# ============================================================
+
+@app.route('/reset', methods=['POST'])
+def reset_device():
+    """
+    Reset all data on the Android device.
+    If any process is running, pause and stop it first.
+    """
+    global execution_status, transfer_status, change_state_status, receive_status
+    global transfer_process, change_state_process, receive_process
+    
+    stopped_process = None
+    
+    try:
+        # Check and stop any running processes
+        
+        # Check transfer process
+        if transfer_status.get('running'):
+            stopped_process = 'Transfer'
+            if transfer_process is not None:
+                try:
+                    transfer_process.terminate()
+                except:
+                    pass
+            transfer_status['running'] = False
+            transfer_status['message'] = 'Stopped for reset'
+        
+        # Check change state process
+        if change_state_status.get('running'):
+            stopped_process = 'Change Item State'
+            if change_state_process is not None:
+                try:
+                    change_state_process.terminate()
+                except:
+                    pass
+            change_state_status['running'] = False
+            change_state_status['message'] = 'Stopped for reset'
+        
+        # Check receive process
+        if receive_status.get('running'):
+            stopped_process = 'Receive'
+            if receive_process is not None:
+                try:
+                    receive_process.terminate()
+                except:
+                    pass
+            receive_status['running'] = False
+            receive_status['message'] = 'Stopped for reset'
+        
+        # Check automator-based execution
+        if execution_status.get('running'):
+            stopped_process = 'Batch execution'
+            auto = get_automator()
+            auto.request_stop()
+            execution_status['running'] = False
+            execution_status['message'] = 'Stopped for reset'
+        
+        # Small delay to let processes stop
+        if stopped_process:
+            time.sleep(0.5)
+        
+        # Perform the reset
+        auto = get_automator()
+        result = auto.reset_all_data()
+        
+        if stopped_process:
+            result['message'] = f"Stopped {stopped_process}. {result['message']}"
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Reset failed: {str(e)}'
+        })
 
 
 if __name__ == '__main__':
