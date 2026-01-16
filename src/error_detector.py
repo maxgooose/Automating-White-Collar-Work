@@ -27,8 +27,11 @@ class WindowFinder:
     Caches position with configurable refresh interval.
     """
 
-    DEFAULT_PATTERNS = ['emulator', 'android', 'pixel', 'nexus', 'genymotion']
+    DEFAULT_PATTERNS = ['scrcpy', 'emulator', 'android', 'pixel', 'nexus', 'genymotion']
     CACHE_REFRESH_SECONDS = 5.0
+    # Minimum window dimensions to filter out toolbars/child windows
+    MIN_WIDTH = 200
+    MIN_HEIGHT = 300
 
     def __init__(self, title_patterns: list = None):
         """
@@ -61,6 +64,9 @@ class WindowFinder:
             # Get all windows
             windows = pwc.getAllWindows()
 
+            # Collect all matching windows, then pick the best one
+            candidates = []
+
             for window in windows:
                 title = window.title.lower() if window.title else ''
 
@@ -74,19 +80,32 @@ class WindowFinder:
 
                             # Get window bounds
                             box = window.box
-                            if box and box.width > 0 and box.height > 0:
-                                bounds = {
+                            if box and box.width >= self.MIN_WIDTH and box.height >= self.MIN_HEIGHT:
+                                candidates.append({
                                     'left': box.left,
                                     'top': box.top,
                                     'width': box.width,
-                                    'height': box.height
-                                }
-                                # Update cache
-                                self._cached_bounds = bounds
-                                self._cache_time = current_time
-                                return bounds
+                                    'height': box.height,
+                                    'title': window.title,
+                                    'area': box.width * box.height
+                                })
                         except Exception:
                             continue
+                        break  # Don't check other patterns for same window
+
+            if candidates:
+                # Pick the largest window (most likely the main emulator window)
+                best = max(candidates, key=lambda c: c['area'])
+                bounds = {
+                    'left': best['left'],
+                    'top': best['top'],
+                    'width': best['width'],
+                    'height': best['height']
+                }
+                # Update cache
+                self._cached_bounds = bounds
+                self._cache_time = current_time
+                return bounds
 
             # No matching window found
             self._cached_bounds = None
@@ -100,6 +119,42 @@ class WindowFinder:
         """Clear the cached window position"""
         self._cached_bounds = None
         self._cache_time = 0
+
+    def list_matching_windows(self) -> list:
+        """
+        Debug method: List all windows that match the patterns.
+        Useful for diagnosing window detection issues.
+
+        Returns:
+            List of dicts with window info
+        """
+        if pwc is None:
+            return []
+
+        results = []
+        try:
+            windows = pwc.getAllWindows()
+            for window in windows:
+                title = window.title.lower() if window.title else ''
+                for pattern in self.title_patterns:
+                    if pattern.lower() in title:
+                        try:
+                            box = window.box
+                            results.append({
+                                'title': window.title,
+                                'left': box.left if box else 0,
+                                'top': box.top if box else 0,
+                                'width': box.width if box else 0,
+                                'height': box.height if box else 0,
+                                'minimized': window.isMinimized
+                            })
+                        except Exception:
+                            pass
+                        break
+        except Exception as e:
+            print(f"Error listing windows: {e}")
+
+        return results
 
 
 class ErrorDetector:
@@ -310,11 +365,25 @@ if __name__ == "__main__":
     # Test WindowFinder first
     print("\n1. Testing WindowFinder...")
     finder = WindowFinder()
+
+    # Show all matching windows for debugging
+    print("   Searching for windows matching patterns:", finder.title_patterns)
+    all_matches = finder.list_matching_windows()
+    if all_matches:
+        print(f"   Found {len(all_matches)} matching window(s):")
+        for w in all_matches:
+            status = "(minimized)" if w['minimized'] else ""
+            size_ok = "(OK)" if w['width'] >= finder.MIN_WIDTH and w['height'] >= finder.MIN_HEIGHT else "(too small)"
+            print(f"     - '{w['title']}': {w['width']}x{w['height']} at ({w['left']}, {w['top']}) {size_ok} {status}")
+    else:
+        print("   No matching windows found")
+
+    # Get the selected window
     bounds = finder.find_emulator_window()
     if bounds:
-        print(f"   Found emulator window: {bounds['width']}x{bounds['height']} at ({bounds['left']}, {bounds['top']})")
+        print(f"   Selected window: {bounds['width']}x{bounds['height']} at ({bounds['left']}, {bounds['top']})")
     else:
-        print("   No emulator window found (will use full monitor)")
+        print("   No suitable emulator window found (will use full monitor)")
 
     # Test ErrorDetector
     print(f"\n2. Testing ErrorDetector (threshold: {ErrorDetector.ERROR_THRESHOLD:.2%})...")
