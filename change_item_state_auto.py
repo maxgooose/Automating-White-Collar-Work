@@ -132,80 +132,6 @@ def press_down():
     run_adb("shell", "input", "keyevent", "KEYCODE_DPAD_DOWN")
     time.sleep(0.02)
 
-def get_focused_text():
-    """Return text from currently focused input field or EditText."""
-    run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
-    ui_xml = run_adb("shell", "cat", "/sdcard/ui.xml")
-    run_adb("shell", "rm", "/sdcard/ui.xml")
-    if not ui_xml:
-        return None
-    try:
-        root = ET.fromstring(ui_xml)
-    except ET.ParseError:
-        return None
-    # First try: element with focused="true"
-    for elem in root.iter("node"):
-        if elem.attrib.get("focused") == "true":
-            return elem.attrib.get("text", "")
-    # Fallback: find EditText fields (common on Pixel/modern Android)
-    for elem in root.iter("node"):
-        class_name = elem.attrib.get("class", "")
-        if "EditText" in class_name:
-            return elem.attrib.get("text", "")
-    return None
-
-
-def clear_focused_field(max_len):
-    """Clear focused field by deleting characters."""
-    run_adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    for _ in range(max_len + 5):
-        run_adb("shell", "input", "keyevent", "KEYCODE_DEL")
-
-
-def type_text_with_verify(text, normalize=None, max_retries=5, delay=0.12):
-    """Type text and verify before pressing enter."""
-    normalize = normalize or (lambda s: s)
-    expected = normalize(text)
-    for attempt in range(1, max_retries + 1):
-        clear_focused_field(len(expected))
-        type_text(text)
-        time.sleep(delay)
-        focused = get_focused_text()
-        if focused is None:
-            print(f"  WARNING: Unable to read focused field (attempt {attempt}/{max_retries})")
-            delay = min(delay + 0.05, 0.5)
-            continue
-        if normalize(focused) == expected:
-            return True
-        print(f"  WARNING: Field mismatch (attempt {attempt}/{max_retries}) -> '{focused}'")
-        delay = min(delay + 0.05, 0.5)
-    return False
-
-
-def detect_error_screen():
-    """
-    Detect known error UI by scanning UIAutomator text.
-    Looks for barcode echo and common error keywords.
-    """
-    run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
-    ui_xml = run_adb("shell", "cat", "/sdcard/ui.xml")
-    run_adb("shell", "rm", "/sdcard/ui.xml")
-    if not ui_xml:
-        return False
-    try:
-        root = ET.fromstring(ui_xml)
-    except ET.ParseError:
-        return False
-
-    keywords = ("error", "invalid", "failed", "barcode:")
-    for elem in root.iter("node"):
-        text = (elem.attrib.get("text", "") or "").strip().lower()
-        desc = (elem.attrib.get("content-desc", "") or "").strip().lower()
-        combined = f"{text} {desc}"
-        if any(k in combined for k in keywords):
-            return True
-    return False
-
 
 def navigate_to_change_item_state():
     """
@@ -230,70 +156,28 @@ def navigate_to_change_item_state():
 def process_item(imei, product_id, index, total):
     """Process a single IMEI/Product ID pair - BATCHED for speed."""
     print(f"\n[{index}/{total}] {imei} -> {product_id[:30]}...")
-
-    # Type IMEI and verify before Enter
-    if not type_text_with_verify(imei, normalize=lambda s: s.replace(" ", "")):
-        print("  ERROR: Unable to verify IMEI in input field. Stopping to avoid wrong entry.")
-        raise SystemExit(1)
-    press_enter()
-    time.sleep(DELAY_SCREEN)
-    if detect_error_screen():
-        print("  ERROR: Error screen detected after IMEI submit. Stopping to avoid wrong entry.")
-        raise SystemExit(1)
     
-    # Type Product ID and verify before Enter
-    if not type_text_with_verify(product_id, normalize=None):
-        print("  ERROR: Unable to verify product ID in input field. Stopping to avoid wrong entry.")
-        raise SystemExit(1)
-    press_enter()
+    def escape(t):
+        e = t.replace(" ", "%s").replace("'", "\\'").replace('"', '\\"')
+        e = e.replace("&", "\\&").replace("(", "\\(").replace(")", "\\)")
+        e = e.replace("+", "\\+")
+        return e
+    
+    imei_esc = escape(imei)
+    pid_esc = escape(product_id)
+    
+    # BATCH: Type IMEI + Enter in one call
+    subprocess.run([ADB, "shell", f"input text {imei_esc} && input keyevent KEYCODE_ENTER"], capture_output=True)
     time.sleep(DELAY_SCREEN)
-    if detect_error_screen():
-        print("  ERROR: Error screen detected after product ID submit. Stopping to avoid wrong entry.")
-        raise SystemExit(1)
+    
+    # BATCH: Type Product ID + Enter in one call
+    subprocess.run([ADB, "shell", f"input text {pid_esc} && input keyevent KEYCODE_ENTER"], capture_output=True)
+    time.sleep(DELAY_SCREEN)
     
     # Tap Confirm
     tap_confirm()
-    time.sleep(DELAY_SCREEN)
-    if detect_error_screen():
-        print("  ERROR: Error screen detected after confirm. Stopping to avoid wrong entry.")
-        raise SystemExit(1)
     
     print(f"  Done!")
-
-
-def normalize_imei(raw_value):
-    """Normalize a single IMEI line (no validation)."""
-    if raw_value is None:
-        return None
-    cleaned = raw_value.strip()
-    if not cleaned:
-        return None
-    return cleaned
-
-
-def load_pairs(data_file):
-    """Load IMEI/Product ID pairs from file."""
-    with open(data_file, "r") as f:
-        lines = [line.strip() for line in f if line.strip()]
-
-    pairs = []
-    invalid = []
-    if len(lines) % 2 != 0:
-        invalid.append((len(lines), "", "missing product ID for last IMEI"))
-
-    for i in range(0, len(lines) - 1, 2):
-        raw_imei = lines[i]
-        product_id = lines[i + 1]
-        imei = normalize_imei(raw_imei)
-        if not imei:
-            invalid.append((i + 1, raw_imei, "empty IMEI"))
-            continue
-        if not product_id:
-            invalid.append((i + 2, product_id, "empty product ID"))
-            continue
-        pairs.append((imei, product_id))
-
-    return pairs, invalid
 
 
 def main():
@@ -306,7 +190,15 @@ def main():
         print("Upload an Excel file via the web interface first.")
         sys.exit(1)
     
-    pairs, invalid = load_pairs(data_file)
+    with open(data_file, "r") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    
+    # Parse pairs (IMEI, Product ID)
+    pairs = []
+    for i in range(0, len(lines) - 1, 2):
+        imei = lines[i]
+        product_id = lines[i + 1]
+        pairs.append((imei, product_id))
     
     total = len(pairs)
     print(f"\n{'='*60}")
@@ -318,13 +210,6 @@ def main():
     if total == 0:
         print("ERROR: No valid pairs found in receive.txt")
         return
-
-    if invalid:
-        print("WARNING: Some lines were skipped due to empty values or missing pairs:")
-        for line_no, value, reason in invalid[:10]:
-            print(f"  Line {line_no}: '{value}' -> {reason}")
-        if len(invalid) > 10:
-            print(f"  ... and {len(invalid) - 10} more")
     
     # Show preview
     print("\nPreview:")

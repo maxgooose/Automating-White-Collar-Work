@@ -166,7 +166,24 @@
         #stockList div.completed { background: #1f2d1f; color: #4ade80; }
         #stockList div.current { background: #2d2a1f; color: #fbbf24; }
         #stockList div.failed { background: #2d1f1f; color: #f87171; }
-        
+
+        /* Error banner */
+        .error-banner {
+            background: #dc3545;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-weight: 500;
+            text-align: center;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         /* Template image section */
         .template-section {
             margin-top: 24px;
@@ -215,8 +232,13 @@
     </div>
     
     <h1>Bulk Stock</h1>
-    
+
     <div class="panel">
+        <!-- Error banner (shown when red screen detected) -->
+        <div class="error-banner" id="errorBanner">
+            ⚠️ Error Detected: Red screen appeared - execution stopped
+        </div>
+
         <div class="hint">A: Sublocation, B: IMEI</div>
         
         <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
@@ -444,6 +466,14 @@
             document.getElementById('progressFill').style.width = pct + '%';
             document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
             if (data.current > 0) renderStockList(data.current - 1, data.current - 1);
+
+            // Show/hide error banner
+            const errorBanner = document.getElementById('errorBanner');
+            if (data.error_detected) {
+                errorBanner.style.display = 'block';
+            } else {
+                errorBanner.style.display = 'none';
+            }
         }
 
         function updateExecutionUI(exec) {

@@ -24,6 +24,7 @@ sys.path.insert(0, str(_project_root))
 
 from android_controller import FinaleAutomator
 from adb_utils import get_data_file_path
+from error_detector import ErrorDetector
 
 app = Flask(__name__)
 
@@ -35,7 +36,8 @@ execution_status = {
     'current': 0,
     'total': 0,
     'current_item': None,
-    'message': ''
+    'message': '',
+    'error_detected': False
 }
 # Store batch data: locations from row 1, all IMEIs from column C
 pending_batch = {
@@ -50,7 +52,8 @@ change_state_status = {
     'current': 0,
     'total': 0,
     'current_item': None,
-    'message': ''
+    'message': '',
+    'error_detected': False
 }
 pending_change_state_items = []
 change_state_process = None  # Store subprocess for stop functionality
@@ -61,7 +64,8 @@ receive_status = {
     'current': 0,
     'total': 0,
     'current_item': None,
-    'message': ''
+    'message': '',
+    'error_detected': False
 }
 pending_receive_items = []
 receive_process = None  # Store subprocess for stop functionality
@@ -150,7 +154,8 @@ transfer_status = {
     'current': 0,
     'total': 0,
     'current_item': None,
-    'message': ''
+    'message': '',
+    'error_detected': False
 }
 pending_transfer_items = []
 transfer_process = None  # Store subprocess for stop functionality
@@ -329,15 +334,30 @@ def read_progress_file(filename):
 def execute_transfer_batch_worker(total):
     """Background worker for batch Transfer execution - runs transfer_auto.py"""
     global transfer_status, transfer_process
-    
+
     script_path = str(_project_root / 'transfer_auto.py')
     progress_file = 'transfer_progress.txt'
-    
+    error_detector = None
+
+    def on_error_detected():
+        """Callback when error detector finds red screen"""
+        transfer_status['error_detected'] = True
+        transfer_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        if transfer_process:
+            try:
+                transfer_process.terminate()
+            except:
+                pass
+
     try:
         transfer_status['current'] = 0
         transfer_status['total'] = total
         transfer_status['message'] = 'Starting transfer_auto.py...'
-        
+
+        # Start error detector
+        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector.start()
+
         # Start the process (non-blocking)
         transfer_process = subprocess.Popen(
             [sys.executable, script_path],
@@ -345,9 +365,14 @@ def execute_transfer_batch_worker(total):
             stderr=subprocess.PIPE,
             cwd=str(_project_root)
         )
-        
+
         # Poll for progress while process is running
         while transfer_process.poll() is None:
+            # Check if error was detected
+            if transfer_status['error_detected']:
+                transfer_process.terminate()
+                break
+
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
@@ -398,6 +423,9 @@ def execute_transfer_batch_worker(total):
             'message': f'Error: {str(e)}'
         }
     finally:
+        # Stop error detector
+        if error_detector:
+            error_detector.stop()
         transfer_process = None
 
 
@@ -421,7 +449,8 @@ def execute_transfer_batch():
         'total': total,
         'current_item': None,
         'message': 'Starting batch execution...',
-        'result': None
+        'result': None,
+        'error_detected': False
     }
     
     # Start background thread to run transfer_auto.py
@@ -714,16 +743,31 @@ def execute_single_change_state():
 def execute_change_state_batch_worker(items):
     """Background worker for batch Change Item State execution - runs change_item_state_auto.py"""
     global change_state_status, change_state_process
-    
+
     total = len(items)
     script_path = str(_project_root / 'change_item_state_auto.py')
     progress_file = 'change_state_progress.txt'
-    
+    error_detector = None
+
+    def on_error_detected():
+        """Callback when error detector finds red screen"""
+        change_state_status['error_detected'] = True
+        change_state_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        if change_state_process:
+            try:
+                change_state_process.terminate()
+            except:
+                pass
+
     try:
         change_state_status['current'] = 0
         change_state_status['total'] = total
         change_state_status['message'] = 'Starting change_item_state_auto.py...'
-        
+
+        # Start error detector
+        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector.start()
+
         # Start the process (non-blocking)
         change_state_process = subprocess.Popen(
             [sys.executable, script_path],
@@ -731,9 +775,14 @@ def execute_change_state_batch_worker(items):
             stderr=subprocess.PIPE,
             cwd=str(_project_root)
         )
-        
+
         # Poll for progress while process is running
         while change_state_process.poll() is None:
+            # Check if error was detected
+            if change_state_status['error_detected']:
+                change_state_process.terminate()
+                break
+
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
@@ -784,6 +833,9 @@ def execute_change_state_batch_worker(items):
             'message': f'Error: {str(e)}'
         }
     finally:
+        # Stop error detector
+        if error_detector:
+            error_detector.stop()
         change_state_process = None
 
 
@@ -809,7 +861,8 @@ def execute_change_state_batch():
         'total': len(items),
         'current_item': None,
         'message': 'Starting batch execution...',
-        'result': None
+        'result': None,
+        'error_detected': False
     }
     
     # Start background thread
@@ -1156,16 +1209,31 @@ def confirm_receive_products():
 def execute_receive_batch_worker(items):
     """Background worker for batch Receive execution - runs receive_typing.py"""
     global receive_status, receive_process
-    
+
     total = len(items)
     script_path = str(_project_root / 'receive_typing.py')
     progress_file = 'receive_progress.txt'
-    
+    error_detector = None
+
+    def on_error_detected():
+        """Callback when error detector finds red screen"""
+        receive_status['error_detected'] = True
+        receive_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        if receive_process:
+            try:
+                receive_process.terminate()
+            except:
+                pass
+
     try:
         receive_status['current'] = 0
         receive_status['total'] = total
         receive_status['message'] = 'Starting receive_typing.py...'
-        
+
+        # Start error detector
+        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector.start()
+
         # Start the process (non-blocking)
         receive_process = subprocess.Popen(
             [sys.executable, script_path],
@@ -1173,9 +1241,14 @@ def execute_receive_batch_worker(items):
             stderr=subprocess.PIPE,
             cwd=str(_project_root)
         )
-        
+
         # Poll for progress while process is running
         while receive_process.poll() is None:
+            # Check if error was detected
+            if receive_status['error_detected']:
+                receive_process.terminate()
+                break
+
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
@@ -1226,6 +1299,9 @@ def execute_receive_batch_worker(items):
             'message': f'Error: {str(e)}'
         }
     finally:
+        # Stop error detector
+        if error_detector:
+            error_detector.stop()
         receive_process = None
 
 
@@ -1262,7 +1338,8 @@ def execute_receive_batch():
         'total': len(items),
         'current_item': None,
         'message': 'Starting batch execution...',
-        'result': None
+        'result': None,
+        'error_detected': False
     }
     
     # Start background thread to run receive_typing.py
@@ -1373,7 +1450,8 @@ def reset_device():
                     pass
             transfer_status['running'] = False
             transfer_status['message'] = 'Stopped for reset'
-        
+            transfer_status['error_detected'] = False
+
         # Check change state process
         if change_state_status.get('running'):
             stopped_process = 'Change Item State'
@@ -1384,7 +1462,8 @@ def reset_device():
                     pass
             change_state_status['running'] = False
             change_state_status['message'] = 'Stopped for reset'
-        
+            change_state_status['error_detected'] = False
+
         # Check receive process
         if receive_status.get('running'):
             stopped_process = 'Receive'
@@ -1395,7 +1474,8 @@ def reset_device():
                     pass
             receive_status['running'] = False
             receive_status['message'] = 'Stopped for reset'
-        
+            receive_status['error_detected'] = False
+
         # Check automator-based execution
         if execution_status.get('running'):
             stopped_process = 'Batch execution'
@@ -1403,6 +1483,7 @@ def reset_device():
             auto.request_stop()
             execution_status['running'] = False
             execution_status['message'] = 'Stopped for reset'
+            execution_status['error_detected'] = False
         
         # Small delay to let processes stop
         if stopped_process:
