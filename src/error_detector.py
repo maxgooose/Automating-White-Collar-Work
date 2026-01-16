@@ -29,7 +29,7 @@ class ErrorDetector:
     }
 
     # Trigger error when this percentage of screen pixels are red
-    ERROR_THRESHOLD = 0.05  # 5% of screen area
+    ERROR_THRESHOLD = 0.001  # 0.1% of screen area (lowered for testing)
 
     # Sampling rate (seconds between captures)
     SAMPLE_RATE = 1.0  # 1 FPS
@@ -167,8 +167,8 @@ class ErrorDetector:
             red_percentage = red_pixels / total_pixels if total_pixels > 0 else 0
 
             # Debug output (only when red detected)
-            if red_percentage > 0.01:  # 1% threshold for logging
-                print(f"Red pixels detected: {red_percentage:.2%} of screen")
+            if red_percentage > 0.0001:  # 0.01% threshold for logging
+                print(f"Red pixels detected: {red_percentage:.4%} of screen ({red_pixels} pixels)")
 
             # Trigger if exceeds threshold
             return red_percentage > self.ERROR_THRESHOLD
@@ -190,12 +190,15 @@ if __name__ == "__main__":
     detector.start()
 
     try:
-        print("Monitoring... Press Ctrl+C to stop")
-        while True:
+        print("Monitoring for 5 seconds...")
+        for i in range(5):
             time.sleep(1)
+            print(f"  {i+1}/5 seconds elapsed...")
             if detector.is_error_detected():
-                print("Error was detected - stopping test")
+                print("✓ RED DETECTED - Error flag set to TRUE")
                 break
+        else:
+            print("✗ No red detected - Error flag is FALSE")
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:

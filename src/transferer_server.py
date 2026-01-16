@@ -383,16 +383,26 @@ def execute_transfer_batch_worker(total):
         # Process finished
         stdout, stderr = transfer_process.communicate()
         
-        # Check if it was terminated (stopped by user)
+        # Check if it was terminated (stopped by user or error detected)
         if transfer_process.returncode == -9 or transfer_process.returncode == -15:
+            # Don't overwrite if error was detected - preserve the error status
+            if not transfer_status.get('error_detected', False):
+                transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
+                transfer_status['result'] = {
+                    'success': False,
+                    'completed': transfer_status['current'],
+                    'total': total,
+                    'message': f'Stopped at {transfer_status["current"]}/{total}'
+                }
+            else:
+                # Error was detected - preserve error message
+                transfer_status['result'] = {
+                    'success': False,
+                    'completed': transfer_status['current'],
+                    'total': total,
+                    'message': transfer_status['message']  # Keep the error message
+                }
             transfer_status['running'] = False
-            transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
-            transfer_status['result'] = {
-                'success': False,
-                'completed': transfer_status['current'],
-                'total': total,
-                'message': f'Stopped at {transfer_status["current"]}/{total}'
-            }
         elif transfer_process.returncode == 0:
             transfer_status['current'] = total
             transfer_status['message'] = f'Completed all {total} transfers'
@@ -793,16 +803,26 @@ def execute_change_state_batch_worker(items):
         # Process finished
         stdout, stderr = change_state_process.communicate()
         
-        # Check if it was terminated (stopped by user)
+        # Check if it was terminated (stopped by user or error detected)
         if change_state_process.returncode == -9 or change_state_process.returncode == -15:
+            # Don't overwrite if error was detected - preserve the error status
+            if not change_state_status.get('error_detected', False):
+                change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
+                change_state_status['result'] = {
+                    'success': False,
+                    'completed': change_state_status['current'],
+                    'total': total,
+                    'message': f'Stopped at {change_state_status["current"]}/{total}'
+                }
+            else:
+                # Error was detected - preserve error message
+                change_state_status['result'] = {
+                    'success': False,
+                    'completed': change_state_status['current'],
+                    'total': total,
+                    'message': change_state_status['message']  # Keep the error message
+                }
             change_state_status['running'] = False
-            change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
-            change_state_status['result'] = {
-                'success': False,
-                'completed': change_state_status['current'],
-                'total': total,
-                'message': f'Stopped at {change_state_status["current"]}/{total}'
-            }
         elif change_state_process.returncode == 0:
             change_state_status['current'] = total
             change_state_status['message'] = f'Completed all {total} items'
@@ -1259,16 +1279,26 @@ def execute_receive_batch_worker(items):
         # Process finished
         stdout, stderr = receive_process.communicate()
         
-        # Check if it was terminated (stopped by user)
+        # Check if it was terminated (stopped by user or error detected)
         if receive_process.returncode == -9 or receive_process.returncode == -15:
+            # Don't overwrite if error was detected - preserve the error status
+            if not receive_status.get('error_detected', False):
+                receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
+                receive_status['result'] = {
+                    'success': False,
+                    'completed': receive_status['current'],
+                    'total': total,
+                    'message': f'Stopped at {receive_status["current"]}/{total}'
+                }
+            else:
+                # Error was detected - preserve error message
+                receive_status['result'] = {
+                    'success': False,
+                    'completed': receive_status['current'],
+                    'total': total,
+                    'message': receive_status['message']  # Keep the error message
+                }
             receive_status['running'] = False
-            receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
-            receive_status['result'] = {
-                'success': False,
-                'completed': receive_status['current'],
-                'total': total,
-                'message': f'Stopped at {receive_status["current"]}/{total}'
-            }
         elif receive_process.returncode == 0:
             receive_status['current'] = total
             receive_status['message'] = f'Completed all {total} items'
