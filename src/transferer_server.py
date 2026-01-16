@@ -354,7 +354,7 @@ def execute_transfer_batch_worker(total):
     def on_error_detected():
         """Callback when error detector finds red screen"""
         transfer_status['error_detected'] = True
-        transfer_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        transfer_status['message'] = 'Error detected: Red screen - stopping execution...'
         if transfer_process:
             try:
                 transfer_process.terminate()
@@ -774,7 +774,7 @@ def execute_change_state_batch_worker(items):
     def on_error_detected():
         """Callback when error detector finds red screen"""
         change_state_status['error_detected'] = True
-        change_state_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        change_state_status['message'] = 'Error detected: Red screen - stopping execution...'
         if change_state_process:
             try:
                 change_state_process.terminate()
@@ -1250,7 +1250,7 @@ def execute_receive_batch_worker(items):
     def on_error_detected():
         """Callback when error detector finds red screen"""
         receive_status['error_detected'] = True
-        receive_status['message'] = '⚠️ Error detected: Red screen - stopping execution...'
+        receive_status['message'] = 'Error detected: Red screen - stopping execution...'
         if receive_process:
             try:
                 receive_process.terminate()

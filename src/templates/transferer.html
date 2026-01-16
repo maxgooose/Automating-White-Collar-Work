@@ -108,6 +108,10 @@
         .btn-danger:hover:not(:disabled) { background: #c82333; }
         .btn-warning { background: #6366f1; }
         .btn-warning:hover:not(:disabled) { background: #4f46e5; }
+        .btn-purple { background: #9333ea; color: #fff; }
+        .btn-purple:hover:not(:disabled) { background: #7e22ce; }
+        .btn-grey { background: #555; color: #fff; }
+        .btn-grey:hover:not(:disabled) { background: #666; }
         .btn-row {
             display: flex;
             gap: 10px;
@@ -169,18 +173,39 @@
         
         /* Error banner */
         .error-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
             background: #dc3545;
             color: white;
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 16px;
+            padding: 16px 48px 16px 24px;
             font-weight: 500;
-            text-align: center;
             display: none;
+            z-index: 9999;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
             animation: slideDown 0.3s ease;
         }
+        .error-banner-close {
+            position: absolute;
+            top: 50%;
+            right: 16px;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .error-banner-close:hover {
+            opacity: 1;
+        }
         @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px); }
+            from { opacity: 0; transform: translateY(-20px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -236,7 +261,8 @@
     <div class="panel">
         <!-- Error banner (shown when red screen detected) -->
         <div class="error-banner" id="errorBanner">
-            ⚠️ Error Detected: Red screen appeared - execution stopped
+            <span id="errorMessage">Error detected</span>
+            <button class="error-banner-close" onclick="closeErrorBanner()">&times;</button>
         </div>
 
         <div class="hint">Excel: A2 = From Location, B2 = To Location, C = IMEIs</div>
@@ -466,11 +492,22 @@
 
             // Show/hide error banner
             const errorBanner = document.getElementById('errorBanner');
+            const errorMessage = document.getElementById('errorMessage');
+
             if (data.error_detected) {
+                let itemInfo = '';
+                if (data.current_item) {
+                    itemInfo = ` (Last processed: ${data.current_item})`;
+                }
+                errorMessage.textContent = `Error Detected: Red screen appeared - stopped at item ${data.current}/${data.total}${itemInfo}`;
                 errorBanner.style.display = 'block';
             } else {
                 errorBanner.style.display = 'none';
             }
+        }
+
+        function closeErrorBanner() {
+            document.getElementById('errorBanner').style.display = 'none';
         }
 
         function updateExecutionUI(exec) {

@@ -286,7 +286,7 @@ class ErrorDetector:
                     # Check for red pixels
                     if self._detect_red(img):
                         self._error_detected = True
-                        print("⚠️ ERROR DETECTED: Red screen indicator found!")
+                        print("ERROR DETECTED: Red screen indicator found!")
 
                         # Call callback if provided
                         if self.callback:
