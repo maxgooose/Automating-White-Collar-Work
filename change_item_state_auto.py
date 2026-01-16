@@ -23,9 +23,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 try:
-    from adb_utils import get_adb_path, get_data_file_path
+    from adb_utils import get_adb_path, get_data_file_path, check_stop_signal
 except ImportError:
-    from src.adb_utils import get_adb_path, get_data_file_path
+    from src.adb_utils import get_adb_path, get_data_file_path, check_stop_signal
 
 # Get cross-platform ADB path
 ADB = get_adb_path()
@@ -228,6 +228,11 @@ def main():
     
     # Process each pair
     for i, (imei, product_id) in enumerate(pairs, 1):
+        # Check for stop signal BEFORE processing this item
+        if check_stop_signal('change_state'):
+            print(f"Stop signal received. Stopping at item {i-1}/{total}")
+            sys.exit(0)
+
         process_item(imei, product_id, i, total)
         # Update progress after each item
         write_progress(i, total)

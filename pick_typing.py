@@ -16,9 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 try:
-    from adb_utils import get_adb_path, get_data_file_path
+    from adb_utils import get_adb_path, get_data_file_path, check_stop_signal
 except ImportError:
-    from src.adb_utils import get_adb_path, get_data_file_path
+    from src.adb_utils import get_adb_path, get_data_file_path, check_stop_signal
 
 # Get cross-platform ADB path
 ADB = get_adb_path()
@@ -75,6 +75,11 @@ def main():
     write_progress(0, total)
 
     for i, item in enumerate(items, 1):
+        # Check for stop signal BEFORE processing this item
+        if check_stop_signal('pick'):
+            print(f"Stop signal received. Stopping at item {i-1}/{total}")
+            sys.exit(0)
+
         if item.strip():
             # Has content - type IMEI then ENTER
             print(f"[{i}/{total}] {item}")

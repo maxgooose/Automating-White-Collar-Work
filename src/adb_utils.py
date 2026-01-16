@@ -87,14 +87,66 @@ def get_project_root() -> Path:
 def get_data_file_path(filename: str) -> str:
     """
     Get cross-platform path to a data file in project root.
-    
+
     Args:
         filename: Name of the file (e.g., 'receive.txt')
-        
+
     Returns:
         str: Absolute path to the file
     """
     return str(get_project_root() / filename)
+
+
+def get_stop_file_path(operation: str) -> str:
+    """
+    Get path to stop signal file for an operation.
+
+    Args:
+        operation: Name of the operation (e.g., 'transfer', 'receive', 'change_state', 'pick')
+
+    Returns:
+        str: Absolute path to the stop file
+    """
+    return str(get_project_root() / f"{operation}_stop.txt")
+
+
+def check_stop_signal(operation: str) -> bool:
+    """
+    Check if stop signal exists. Used by automation scripts.
+
+    Args:
+        operation: Name of the operation
+
+    Returns:
+        bool: True if stop signal exists, False otherwise
+    """
+    return os.path.exists(get_stop_file_path(operation))
+
+
+def create_stop_signal(operation: str) -> None:
+    """
+    Create stop signal file. Used by server on error detection.
+
+    Args:
+        operation: Name of the operation
+    """
+    with open(get_stop_file_path(operation), 'w') as f:
+        f.write('')
+
+
+def clear_stop_signal(operation: str) -> None:
+    """
+    Delete stop signal file. Used by server on batch start.
+
+    Args:
+        operation: Name of the operation
+    """
+    stop_file = get_stop_file_path(operation)
+    if os.path.exists(stop_file):
+        try:
+            os.remove(stop_file)
+        except OSError:
+            pass
 
 
 def verify_adb_connection() -> dict:

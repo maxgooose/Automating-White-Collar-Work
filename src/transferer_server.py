@@ -23,7 +23,7 @@ sys.path.insert(0, str(_script_dir))
 sys.path.insert(0, str(_project_root))
 
 from android_controller import FinaleAutomator
-from adb_utils import get_data_file_path
+from adb_utils import get_data_file_path, create_stop_signal, clear_stop_signal
 from error_detector import ErrorDetector
 
 app = Flask(__name__)
@@ -350,11 +350,16 @@ def execute_transfer_batch_worker(total):
     script_path = str(_project_root / 'transfer_auto.py')
     progress_file = 'transfer_progress.txt'
     error_detector = None
+    error_at_item = [None]  # Use list to allow modification in nested function
 
     def on_error_detected():
         """Callback when error detector finds red screen"""
+        # Capture the current progress at the moment of error
+        error_at_item[0] = transfer_status['current']
         transfer_status['error_detected'] = True
         transfer_status['message'] = 'Error detected: Red screen - stopping execution...'
+        # Create stop signal FIRST so script sees it before terminate
+        create_stop_signal('transfer')
         if transfer_process:
             try:
                 transfer_process.terminate()
@@ -362,6 +367,8 @@ def execute_transfer_batch_worker(total):
                 pass
 
     try:
+        # Clear any existing stop signal before starting
+        clear_stop_signal('transfer')
         transfer_status['current'] = 0
         transfer_status['total'] = total
         transfer_status['message'] = 'Starting transfer_auto.py...'
@@ -380,7 +387,7 @@ def execute_transfer_batch_worker(total):
 
         # Poll for progress while process is running
         while transfer_process.poll() is None:
-            # Check if error was detected
+            # Check if error was detected - stop updating progress
             if transfer_status['error_detected']:
                 transfer_process.terminate()
                 break
@@ -388,8 +395,10 @@ def execute_transfer_batch_worker(total):
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
-                transfer_status['current'] = current
-                transfer_status['message'] = f'Processing {current}/{total}...'
+                # Only update progress if no error detected
+                if not transfer_status['error_detected']:
+                    transfer_status['current'] = current
+                    transfer_status['message'] = f'Processing {current}/{total}...'
             time.sleep(0.3)
         
         # Process finished
@@ -407,10 +416,12 @@ def execute_transfer_batch_worker(total):
                     'message': f'Stopped at {transfer_status["current"]}/{total}'
                 }
             else:
-                # Error was detected - preserve error message
+                # Error was detected - use the progress captured at error time
+                completed = error_at_item[0] if error_at_item[0] is not None else transfer_status['current']
+                transfer_status['current'] = completed  # Reset to error point
                 transfer_status['result'] = {
                     'success': False,
-                    'completed': transfer_status['current'],
+                    'completed': completed,
                     'total': total,
                     'message': transfer_status['message']  # Keep the error message
                 }
@@ -770,11 +781,16 @@ def execute_change_state_batch_worker(items):
     script_path = str(_project_root / 'change_item_state_auto.py')
     progress_file = 'change_state_progress.txt'
     error_detector = None
+    error_at_item = [None]  # Use list to allow modification in nested function
 
     def on_error_detected():
         """Callback when error detector finds red screen"""
+        # Capture the current progress at the moment of error
+        error_at_item[0] = change_state_status['current']
         change_state_status['error_detected'] = True
         change_state_status['message'] = 'Error detected: Red screen - stopping execution...'
+        # Create stop signal FIRST so script sees it before terminate
+        create_stop_signal('change_state')
         if change_state_process:
             try:
                 change_state_process.terminate()
@@ -782,6 +798,8 @@ def execute_change_state_batch_worker(items):
                 pass
 
     try:
+        # Clear any existing stop signal before starting
+        clear_stop_signal('change_state')
         change_state_status['current'] = 0
         change_state_status['total'] = total
         change_state_status['message'] = 'Starting change_item_state_auto.py...'
@@ -800,7 +818,7 @@ def execute_change_state_batch_worker(items):
 
         # Poll for progress while process is running
         while change_state_process.poll() is None:
-            # Check if error was detected
+            # Check if error was detected - stop updating progress
             if change_state_status['error_detected']:
                 change_state_process.terminate()
                 break
@@ -808,8 +826,10 @@ def execute_change_state_batch_worker(items):
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
-                change_state_status['current'] = current
-                change_state_status['message'] = f'Processing {current}/{total}...'
+                # Only update progress if no error detected
+                if not change_state_status['error_detected']:
+                    change_state_status['current'] = current
+                    change_state_status['message'] = f'Processing {current}/{total}...'
             time.sleep(0.3)
         
         # Process finished
@@ -827,10 +847,12 @@ def execute_change_state_batch_worker(items):
                     'message': f'Stopped at {change_state_status["current"]}/{total}'
                 }
             else:
-                # Error was detected - preserve error message
+                # Error was detected - use the progress captured at error time
+                completed = error_at_item[0] if error_at_item[0] is not None else change_state_status['current']
+                change_state_status['current'] = completed  # Reset to error point
                 change_state_status['result'] = {
                     'success': False,
-                    'completed': change_state_status['current'],
+                    'completed': completed,
                     'total': total,
                     'message': change_state_status['message']  # Keep the error message
                 }
@@ -1246,11 +1268,18 @@ def execute_receive_batch_worker(items):
     script_path = str(_project_root / 'receive_typing.py')
     progress_file = 'receive_progress.txt'
     error_detector = None
+    error_at_item = [None]  # Use list to allow modification in nested function
 
     def on_error_detected():
         """Callback when error detector finds red screen"""
+        # Capture the current progress at the moment of error
+        # The item that failed is the one being processed (current + 1), so we keep current as-is
+        # This represents the last successfully completed item
+        error_at_item[0] = receive_status['current']
         receive_status['error_detected'] = True
         receive_status['message'] = 'Error detected: Red screen - stopping execution...'
+        # Create stop signal FIRST so script sees it before terminate
+        create_stop_signal('receive')
         if receive_process:
             try:
                 receive_process.terminate()
@@ -1258,6 +1287,8 @@ def execute_receive_batch_worker(items):
                 pass
 
     try:
+        # Clear any existing stop signal before starting
+        clear_stop_signal('receive')
         receive_status['current'] = 0
         receive_status['total'] = total
         receive_status['message'] = 'Starting receive_typing.py...'
@@ -1276,7 +1307,7 @@ def execute_receive_batch_worker(items):
 
         # Poll for progress while process is running
         while receive_process.poll() is None:
-            # Check if error was detected
+            # Check if error was detected - stop updating progress
             if receive_status['error_detected']:
                 receive_process.terminate()
                 break
@@ -1284,8 +1315,10 @@ def execute_receive_batch_worker(items):
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
-                receive_status['current'] = current
-                receive_status['message'] = f'Processing {current}/{total}...'
+                # Only update progress if no error detected
+                if not receive_status['error_detected']:
+                    receive_status['current'] = current
+                    receive_status['message'] = f'Processing {current}/{total}...'
             time.sleep(0.3)
         
         # Process finished
@@ -1303,10 +1336,12 @@ def execute_receive_batch_worker(items):
                     'message': f'Stopped at {receive_status["current"]}/{total}'
                 }
             else:
-                # Error was detected - preserve error message
+                # Error was detected - use the progress captured at error time
+                completed = error_at_item[0] if error_at_item[0] is not None else receive_status['current']
+                receive_status['current'] = completed  # Reset to error point
                 receive_status['result'] = {
                     'success': False,
-                    'completed': receive_status['current'],
+                    'completed': completed,
                     'total': total,
                     'message': receive_status['message']  # Keep the error message
                 }
@@ -1551,11 +1586,16 @@ def execute_pick_batch_worker():
     script_path = str(_project_root / 'pick_typing.py')
     progress_file = 'pick_progress.txt'
     error_detector = None
+    error_at_item = [None]  # Use list to allow modification in nested function
 
     def on_error_detected():
         """Callback when error detector finds red screen"""
+        # Capture the current progress at the moment of error
+        error_at_item[0] = pick_status['current']
         pick_status['error_detected'] = True
         pick_status['message'] = 'Error detected: Red screen - stopping execution...'
+        # Create stop signal FIRST so script sees it before terminate
+        create_stop_signal('pick')
         if pick_process:
             try:
                 pick_process.terminate()
@@ -1563,6 +1603,8 @@ def execute_pick_batch_worker():
                 pass
 
     try:
+        # Clear any existing stop signal before starting
+        clear_stop_signal('pick')
         pick_status['current'] = 0
         pick_status['total'] = total
         pick_status['message'] = 'Starting pick_typing.py...'
@@ -1581,7 +1623,7 @@ def execute_pick_batch_worker():
 
         # Poll for progress while process is running
         while pick_process.poll() is None:
-            # Check if error was detected
+            # Check if error was detected - stop updating progress
             if pick_status['error_detected']:
                 pick_process.terminate()
                 break
@@ -1589,8 +1631,10 @@ def execute_pick_batch_worker():
             progress = read_progress_file(progress_file)
             if progress:
                 current, _ = progress
-                pick_status['current'] = current
-                pick_status['message'] = f'Processing {current}/{total}...'
+                # Only update progress if no error detected
+                if not pick_status['error_detected']:
+                    pick_status['current'] = current
+                    pick_status['message'] = f'Processing {current}/{total}...'
             time.sleep(0.3)
 
         # Process finished
@@ -1607,9 +1651,12 @@ def execute_pick_batch_worker():
                     'message': f'Stopped at {pick_status["current"]}/{total}'
                 }
             else:
+                # Error was detected - use the progress captured at error time
+                completed = error_at_item[0] if error_at_item[0] is not None else pick_status['current']
+                pick_status['current'] = completed  # Reset to error point
                 pick_status['result'] = {
                     'success': False,
-                    'completed': pick_status['current'],
+                    'completed': completed,
                     'total': total,
                     'message': pick_status['message']
                 }
