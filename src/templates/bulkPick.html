@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pick Item</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .back-link {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            background: #252525;
+            border: 1px solid #333;
+            transition: all 0.2s;
+        }
+        .back-link:hover { color: #fff; border-color: #444; }
+        .device-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: #252525;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+        .device-status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #dc3545;
+        }
+        .device-status.connected .dot { background: #28a745; }
+        h1 {
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+            font-weight: 500;
+            margin: 40px 0 30px;
+        }
+        .panel {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #252525;
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid #333;
+        }
+        .hint {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .dropzone {
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            background: #1a1a1a;
+            transition: all 0.2s;
+        }
+        .dropzone:hover { border-color: #555; background: #222; }
+        .dropzone.dragover { border-color: #666; background: #252525; }
+        .dropzone-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 12px;
+            opacity: 0.6;
+        }
+        .dropzone-text { color: #888; font-size: 14px; }
+        input[type="file"] { display: none; }
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 16px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+            background: #333;
+            color: #fff;
+        }
+        button:hover:not(:disabled) { background: #444; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: #22d3ee; color: #000; }
+        .btn-primary:hover:not(:disabled) { background: #06b6d4; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover:not(:disabled) { background: #c82333; }
+        .btn-warning { background: #6366f1; }
+        .btn-warning:hover:not(:disabled) { background: #4f46e5; }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .btn-row button { flex: 1; margin-top: 0; }
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-container.active { display: block; }
+        .progress-bar {
+            height: 8px;
+            background: #1a1a1a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #22d3ee;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            font-size: 13px;
+            color: #888;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .status {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            font-size: 13px;
+            text-align: center;
+            color: #888;
+        }
+        .status.error { background: #2d1f1f; color: #f87171; }
+        .status.success { background: #1f2d1f; color: #4ade80; }
+        #pickList {
+            margin-top: 16px;
+            max-height: 200px;
+            overflow-y: auto;
+            border-radius: 8px;
+            background: #1a1a1a;
+        }
+        #pickList:empty { display: none; }
+        #pickList div {
+            padding: 10px 14px;
+            border-bottom: 1px solid #333;
+            font-size: 13px;
+            color: #ccc;
+        }
+        #pickList div:last-child { border-bottom: none; }
+        #pickList div.completed { background: #1f2d1f; color: #4ade80; }
+        #pickList div.current { background: #0c3d3d; color: #22d3ee; }
+        #pickList div.failed { background: #2d1f1f; color: #f87171; }
+        #pickList div.empty-marker { color: #666; font-style: italic; }
+
+        /* Error banner */
+        .error-banner {
+            background: #dc3545;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-weight: 500;
+            text-align: center;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Template image section */
+        .template-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+        .template-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+        .template-toggle:hover .template-title { color: #aaa; }
+        .template-title {
+            font-size: 13px;
+            color: #888;
+            transition: color 0.2s;
+        }
+        .template-arrow {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
+        }
+        .template-section.expanded .template-arrow { transform: rotate(90deg); }
+        .template-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .template-section.expanded .template-content { max-height: 600px; }
+        .template-img {
+            width: 100%;
+            margin-top: 12px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">&larr; Home</a>
+
+    <div class="device-status" id="deviceStatus">
+        <span class="dot"></span>
+        <span id="deviceText">Checking...</span>
+    </div>
+
+    <h1>Pick Item</h1>
+
+    <div class="panel">
+        <!-- Error banner (shown when red screen detected) -->
+        <div class="error-banner" id="errorBanner">
+            Error Detected: Red screen appeared - execution stopped
+        </div>
+
+        <div class="hint">A: IMEI (empty cells = Enter only)</div>
+
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('excelFile').click()">
+            <svg class="dropzone-icon" viewBox="0 0 48 48">
+                <rect x="8" y="4" width="32" height="40" rx="3" fill="#1D6F42"/>
+                <rect x="12" y="12" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="12" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="12" y="20" width="10" height="5" fill="white" opacity="0.6"/>
+                <rect x="26" y="20" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="12" y="28" width="10" height="5" fill="white" opacity="0.9"/>
+                <rect x="26" y="28" width="10" height="5" fill="white" opacity="0.6"/>
+            </svg>
+            <div class="dropzone-text">Drop Excel file or click to browse</div>
+        </div>
+        <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="uploadExcel()">
+
+        <button onclick="uploadExcel()">Load File</button>
+
+        <div class="btn-row" id="batchButtons" style="display: none;">
+            <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Pick All</button>
+            <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
+            <button class="btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
+            <button class="btn-warning" id="resetBtn" onclick="resetDevice()">Reset</button>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">0 / 0</div>
+        </div>
+
+        <div class="status" id="uploadStatus">No file loaded</div>
+        <div id="pickList"></div>
+
+        <!-- Template Example -->
+        <div class="template-section" id="templateSection">
+            <div class="template-toggle" onclick="toggleTemplate()">
+                <span class="template-title">Excel Format Example</span>
+                <span class="template-arrow">&#9654;</span>
+            </div>
+            <div class="template-content">
+                <img class="template-img" src="/static/pickTemplate.png" alt="Template Example" onerror="this.parentElement.innerHTML='<p style=\'color:#666;padding:12px;font-size:13px;\'>No template image available</p>'">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleTemplate() {
+            document.getElementById('templateSection').classList.toggle('expanded');
+        }
+        let loadedItems = [];
+        let eventSource = null;
+        let isExecuting = false;
+        let isPaused = false;
+        let isStopped = false;
+        const originalExecuteBtnText = 'Pick All';
+
+        checkDeviceStatus();
+        setInterval(checkDeviceStatus, 5000);
+
+        async function checkDeviceStatus() {
+            try {
+                const res = await fetch('/device-status');
+                const data = await res.json();
+                const el = document.getElementById('deviceStatus');
+                el.className = 'device-status' + (data.connected ? ' connected' : '');
+                document.getElementById('deviceText').textContent = data.connected ? 'Connected' : 'No device';
+            } catch (e) {
+                document.getElementById('deviceText').textContent = 'Error';
+            }
+        }
+
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('excelFile');
+
+        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                uploadExcel();
+            }
+        });
+
+        async function uploadExcel() {
+            const status = document.getElementById('uploadStatus');
+            const list = document.getElementById('pickList');
+            const batchBtns = document.getElementById('batchButtons');
+
+            if (!fileInput.files.length) {
+                status.className = 'status error';
+                status.textContent = 'Select a file first';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            status.className = 'status';
+            status.textContent = 'Loading...';
+            list.innerHTML = '';
+
+            try {
+                const res = await fetch('/upload-pick', { method: 'POST', body: formData });
+                const data = await res.json();
+                status.className = 'status ' + (data.success ? 'success' : 'error');
+                status.textContent = data.message;
+
+                if (data.success && data.items) {
+                    loadedItems = data.items;
+                    renderPickList();
+                    batchBtns.style.display = 'flex';
+                }
+            } catch (e) {
+                status.className = 'status error';
+                status.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function renderPickList(currentIndex = -1, completedCount = 0, failedIndex = -1) {
+            const list = document.getElementById('pickList');
+            list.innerHTML = loadedItems.map((item, i) => {
+                let cls = '';
+                if (failedIndex === i) cls = 'failed';
+                else if (i < completedCount) cls = 'completed';
+                else if (i === currentIndex) cls = 'current';
+
+                const displayItem = item.trim() ? item : '(ENTER)';
+                const emptyClass = item.trim() ? '' : ' empty-marker';
+                return `<div class="${cls}${emptyClass}"><strong>${i+1}.</strong> ${displayItem}</div>`;
+            }).join('');
+        }
+
+        async function executeBatch() {
+            if (!loadedItems.length) return;
+            isExecuting = true;
+            isPaused = false;
+            isStopped = false;
+            updateExecutionUI(true);
+
+            // Hide error banner when starting new execution
+            document.getElementById('errorBanner').style.display = 'none';
+
+            eventSource = new EventSource('/pick-status-stream');
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateProgress(data);
+                if (!data.running) {
+                    eventSource.close();
+                    isExecuting = false;
+                    updateExecutionUI(false);
+                    if (data.message) {
+                        document.getElementById('uploadStatus').className = 'status success';
+                        document.getElementById('uploadStatus').textContent = data.message || 'Completed';
+                    }
+                }
+            };
+            eventSource.onerror = () => { eventSource.close(); isExecuting = false; updateExecutionUI(false); };
+
+            const res = await fetch('/execute-pick-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: loadedItems })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                document.getElementById('uploadStatus').className = 'status error';
+                document.getElementById('uploadStatus').textContent = data.message;
+                eventSource.close();
+                isExecuting = false;
+                updateExecutionUI(false);
+            }
+        }
+
+        async function togglePause() {
+            const btn = document.getElementById('pauseBtn');
+            if (isPaused) {
+                await fetch('/pick-resume', { method: 'POST' });
+                isPaused = false;
+                btn.textContent = 'Pause';
+            } else {
+                await fetch('/pick-pause', { method: 'POST' });
+                isPaused = true;
+                btn.textContent = 'Resume';
+            }
+        }
+
+        async function stopExecution() {
+            await fetch('/pick-stop', { method: 'POST' });
+            document.getElementById('uploadStatus').textContent = 'Stopping...';
+            isStopped = true;
+            updateExecutionUI(false);
+        }
+
+        async function resetDevice() {
+            const status = document.getElementById('uploadStatus');
+            const resetBtn = document.getElementById('resetBtn');
+
+            resetBtn.disabled = true;
+            resetBtn.textContent = 'Resetting...';
+            status.textContent = 'Resetting device...';
+            status.className = 'status';
+
+            try {
+                const res = await fetch('/reset', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    status.textContent = data.message;
+                    status.className = 'status success';
+                } else {
+                    status.textContent = data.message;
+                    status.className = 'status error';
+                }
+            } catch (e) {
+                status.textContent = 'Reset failed: ' + e.message;
+                status.className = 'status error';
+            } finally {
+                resetBtn.disabled = false;
+                resetBtn.textContent = 'Reset';
+                updateExecutionUI(false);
+            }
+        }
+
+        function updateProgress(data) {
+            document.getElementById('progressContainer').classList.add('active');
+            const pct = data.total > 0 ? (data.current / data.total) * 100 : 0;
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
+            if (data.current > 0) renderPickList(data.current - 1, data.current - 1);
+
+            // Show/hide error banner
+            const errorBanner = document.getElementById('errorBanner');
+            if (data.error_detected) {
+                errorBanner.style.display = 'block';
+            } else {
+                errorBanner.style.display = 'none';
+            }
+        }
+
+        function updateExecutionUI(exec) {
+            const executeBtn = document.getElementById('executeBatchBtn');
+            executeBtn.disabled = exec;
+            document.getElementById('pauseBtn').disabled = !exec;
+            document.getElementById('stopBtn').disabled = !exec;
+            if (!exec) {
+                document.getElementById('pauseBtn').textContent = 'Pause';
+                // Change button text to "Resume" if stopped, otherwise restore original text
+                executeBtn.textContent = isStopped ? 'Resume' : originalExecuteBtnText;
+            } else {
+                executeBtn.textContent = originalExecuteBtnText;
+            }
+        }
+    </script>
+</body>
+</html>

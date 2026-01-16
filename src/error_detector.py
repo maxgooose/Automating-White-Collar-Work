@@ -14,6 +14,93 @@ except ImportError:
     mss = None
     print("Warning: mss not installed. Error detection will be disabled.")
 
+try:
+    import pywinctl as pwc
+except ImportError:
+    pwc = None
+    print("Warning: pywinctl not installed. Using full monitor capture.")
+
+
+class WindowFinder:
+    """
+    Helper class to find and track emulator window position.
+    Caches position with configurable refresh interval.
+    """
+
+    DEFAULT_PATTERNS = ['emulator', 'android', 'pixel', 'nexus', 'genymotion']
+    CACHE_REFRESH_SECONDS = 5.0
+
+    def __init__(self, title_patterns: list = None):
+        """
+        Initialize WindowFinder.
+
+        Args:
+            title_patterns: List of strings to search for in window titles (case-insensitive).
+                           Defaults to common emulator window names.
+        """
+        self.title_patterns = title_patterns or self.DEFAULT_PATTERNS
+        self._cached_bounds = None
+        self._cache_time = 0
+
+    def find_emulator_window(self) -> Optional[dict]:
+        """
+        Find emulator window and return its bounds.
+
+        Returns:
+            dict with {left, top, width, height} or None if not found
+        """
+        if pwc is None:
+            return None
+
+        # Check cache first
+        current_time = time.time()
+        if self._cached_bounds and (current_time - self._cache_time) < self.CACHE_REFRESH_SECONDS:
+            return self._cached_bounds
+
+        try:
+            # Get all windows
+            windows = pwc.getAllWindows()
+
+            for window in windows:
+                title = window.title.lower() if window.title else ''
+
+                # Check if window title matches any pattern
+                for pattern in self.title_patterns:
+                    if pattern.lower() in title:
+                        # Check if window is visible and not minimized
+                        try:
+                            if window.isMinimized:
+                                continue
+
+                            # Get window bounds
+                            box = window.box
+                            if box and box.width > 0 and box.height > 0:
+                                bounds = {
+                                    'left': box.left,
+                                    'top': box.top,
+                                    'width': box.width,
+                                    'height': box.height
+                                }
+                                # Update cache
+                                self._cached_bounds = bounds
+                                self._cache_time = current_time
+                                return bounds
+                        except Exception:
+                            continue
+
+            # No matching window found
+            self._cached_bounds = None
+            return None
+
+        except Exception as e:
+            print(f"Error finding emulator window: {e}")
+            return None
+
+    def clear_cache(self):
+        """Clear the cached window position"""
+        self._cached_bounds = None
+        self._cache_time = 0
+
 
 class ErrorDetector:
     """
@@ -34,20 +121,26 @@ class ErrorDetector:
     # Sampling rate (seconds between captures)
     SAMPLE_RATE = 1.0  # 1 FPS
 
-    def __init__(self, callback: Optional[Callable] = None, monitor_index: int = 0):
+    def __init__(self, callback: Optional[Callable] = None, monitor_index: int = 0,
+                 focus_emulator: bool = True, window_title_patterns: list = None):
         """
         Initialize error detector.
 
         Args:
             callback: Function to call when error is detected
-            monitor_index: Which monitor to capture (0 = primary)
+            monitor_index: Which monitor to capture (0 = primary) - used as fallback
+            focus_emulator: If True, try to capture only the emulator window
+            window_title_patterns: Custom patterns to match emulator window titles
         """
         self.callback = callback
         self.monitor_index = monitor_index
+        self.focus_emulator = focus_emulator
         self._running = False
         self._thread = None
         self._error_detected = False
         self._sct = None
+        self._window_finder = WindowFinder(window_title_patterns) if focus_emulator else None
+        self._last_capture_mode = None  # Track capture mode for logging
 
         if mss is None:
             print("ERROR: mss library not available. Install with: pip install mss")
@@ -90,6 +183,37 @@ class ErrorDetector:
         """Check if error has been detected"""
         return self._error_detected
 
+    def _get_capture_region(self) -> dict:
+        """
+        Get the screen region to capture.
+
+        Returns:
+            dict with {left, top, width, height} for MSS grab
+        """
+        # Try to get emulator window bounds if focus_emulator is enabled
+        if self.focus_emulator and self._window_finder:
+            bounds = self._window_finder.find_emulator_window()
+            if bounds:
+                # Log mode change
+                if self._last_capture_mode != 'emulator':
+                    print(f"Capturing emulator window: {bounds['width']}x{bounds['height']} at ({bounds['left']}, {bounds['top']})")
+                    self._last_capture_mode = 'emulator'
+                return bounds
+            else:
+                # Log fallback warning (only once per fallback)
+                if self._last_capture_mode != 'fullscreen':
+                    print("Warning: Emulator window not found. Falling back to full monitor capture.")
+                    self._last_capture_mode = 'fullscreen'
+
+        # Fallback to full monitor
+        monitor = self._sct.monitors[self.monitor_index + 1]  # +1 because 0 is all monitors
+        return {
+            'left': monitor['left'],
+            'top': monitor['top'],
+            'width': monitor['width'],
+            'height': monitor['height']
+        }
+
     def _monitor_loop(self):
         """Main monitoring loop (runs in background thread)"""
         try:
@@ -97,9 +221,9 @@ class ErrorDetector:
 
             while self._running:
                 try:
-                    # Capture screen
-                    monitor = self._sct.monitors[self.monitor_index + 1]  # +1 because 0 is all monitors
-                    screenshot = self._sct.grab(monitor)
+                    # Capture screen (emulator window or full monitor)
+                    capture_region = self._get_capture_region()
+                    screenshot = self._sct.grab(capture_region)
 
                     # Convert to numpy array (RGB)
                     img = np.array(screenshot)
@@ -181,26 +305,40 @@ class ErrorDetector:
 # Quick test
 if __name__ == "__main__":
     print("Testing Error Detector...")
-    print(f"Monitoring for red screens (threshold: {ErrorDetector.ERROR_THRESHOLD:.0%})")
+    print("=" * 50)
+
+    # Test WindowFinder first
+    print("\n1. Testing WindowFinder...")
+    finder = WindowFinder()
+    bounds = finder.find_emulator_window()
+    if bounds:
+        print(f"   Found emulator window: {bounds['width']}x{bounds['height']} at ({bounds['left']}, {bounds['top']})")
+    else:
+        print("   No emulator window found (will use full monitor)")
+
+    # Test ErrorDetector
+    print(f"\n2. Testing ErrorDetector (threshold: {ErrorDetector.ERROR_THRESHOLD:.2%})...")
 
     def on_error():
         print("ERROR CALLBACK: Red screen detected!")
 
-    detector = ErrorDetector(callback=on_error)
+    detector = ErrorDetector(callback=on_error, focus_emulator=True)
     detector.start()
 
     try:
-        print("Monitoring for 5 seconds...")
+        print("   Monitoring for 5 seconds...")
         for i in range(5):
             time.sleep(1)
-            print(f"  {i+1}/5 seconds elapsed...")
+            print(f"   {i+1}/5 seconds elapsed...")
             if detector.is_error_detected():
-                print("✓ RED DETECTED - Error flag set to TRUE")
+                print("   RED DETECTED - Error flag set to TRUE")
                 break
         else:
-            print("✗ No red detected - Error flag is FALSE")
+            print("   No red detected - Error flag is FALSE")
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
         detector.stop()
-        print("Test complete")
+
+    print("=" * 50)
+    print("Test complete")

@@ -93,14 +93,15 @@ def main():
     time.sleep(0.1)
     press_enter()
     time.sleep(0.1)
-    write_progress(1, total)
+    current = 1
+    write_progress(current, total)
     
     for i, item in enumerate(items[1:], 2):
         print(f"[{i}/{total}] {item}")
         
-        # Special handling for iPad items
-        if item.lower().startswith('ipad') or item.lower().startswith('good'):
-            print("  SKU  found - special handling")
+        # Special handling for non IMEI items
+        if item.lower().startswith('ipad') or item.lower().startswith('good') or item.lower().startswith('iphone') or item.lower().startswith('accep') or item.lower().startswith('galaxy'):
+            print("  Non IMEI item found - special handling")
             time.sleep(0.1)
             press_enter()
             print("  Enter pressed")
@@ -116,7 +117,8 @@ def main():
             time.sleep(0.1)
         
         # Update progress after each item
-        write_progress(i, total)
+        current += 1
+        write_progress(current, total)
     
     print("-" * 40)
     print(f"DONE! Processed {total} items.")

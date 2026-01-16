@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Type Barcodes - Types barcodes/IMEIs from receive.txt to Android device.
+Pick Typing - Types IMEIs for pick operations from Excel data.
 Cross-platform compatible (Windows, macOS, Linux).
+
+Reads pick_data.txt where each line is an IMEI or empty (for ENTER only).
+Empty lines trigger just ENTER press without typing.
 """
 import subprocess
 import time
@@ -35,36 +38,61 @@ def press_enter():
     subprocess.run([ADB, "shell", "input", "keyevent", "KEYCODE_ENTER"], capture_output=True)
 
 
+def write_progress(current, total):
+    """Write progress to file for server to poll."""
+    progress_file = get_data_file_path("pick_progress.txt")
+    with open(progress_file, 'w') as f:
+        f.write(f"{current},{total}")
+
+
 def main():
     # Get data file path (cross-platform)
-    data_file = get_data_file_path("receive.txt")
+    data_file = get_data_file_path("pick_data.txt")
 
     if not os.path.exists(data_file):
         print(f"ERROR: Data file not found: {data_file}")
-        print("Create receive.txt with one barcode/IMEI per line.")
+        print("Upload an Excel file via the web interface first.")
         sys.exit(1)
 
-    # Read IMEIs from file
+    # Read ALL lines including empty ones (don't strip/filter)
     with open(data_file, "r") as f:
-        imeis = [line.strip() for line in f if line.strip()]
+        items = [line.rstrip('\n\r') for line in f]
 
-    if not imeis:
-        print("ERROR: No barcodes found in receive.txt")
+    # Remove trailing empty lines only
+    while items and items[-1] == '':
+        items.pop()
+
+    if not items:
+        print("ERROR: No data found in pick_data.txt")
         sys.exit(1)
 
+    total = len(items)
     print(f"ADB path: {ADB}")
-    print(f"Processing {len(imeis)} barcodes...")
+    print(f"Processing {total} items...")
     print("-" * 40)
 
-    for i, imei in enumerate(imeis, 1):
-        print(f"[{i}/{len(imeis)}] {imei}")
-        type_text(imei)
-        time.sleep(0.1)
-        press_enter()
+    # Initialize progress
+    write_progress(0, total)
+
+    for i, item in enumerate(items, 1):
+        if item.strip():
+            # Has content - type IMEI then ENTER
+            print(f"[{i}/{total}] {item}")
+            type_text(item)
+            time.sleep(0.1)
+            press_enter()
+        else:
+            # Empty line - just press ENTER
+            print(f"[{i}/{total}] (ENTER)")
+            press_enter()
+
         time.sleep(0.3)
 
+        # Update progress after each item
+        write_progress(i, total)
+
     print("-" * 40)
-    print(f"DONE! Processed {len(imeis)} barcodes.")
+    print(f"DONE! Processed {total} items.")
 
 
 if __name__ == "__main__":

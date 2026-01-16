@@ -70,6 +70,18 @@ receive_status = {
 pending_receive_items = []
 receive_process = None  # Store subprocess for stop functionality
 
+# Pick specific state
+pick_status = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'current_item': None,
+    'message': '',
+    'error_detected': False
+}
+pending_pick_items = []
+pick_process = None  # Store subprocess for stop functionality
+
 
 def get_automator():
     """Get or create the FinaleAutomator instance"""
@@ -1453,6 +1465,282 @@ def stop_receive():
 
 
 # ============================================================
+# PICK ROUTES
+# ============================================================
+
+@app.route('/pick')
+def pick_page():
+    """Serve the Pick Item interface"""
+    return render_template('bulkPick.html')
+
+
+@app.route('/upload-pick', methods=['POST'])
+def upload_pick_excel():
+    """
+    Handle Excel file upload for Pick.
+
+    Excel format:
+    - Column A: IMEIs starting from row 2 (A2)
+    - Empty cells trigger ENTER press only
+    - Reads down to last non-empty cell in column A
+    """
+    global pending_pick_items
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'})
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No file selected'})
+
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'File must be .xlsx or .xls'})
+
+    try:
+        # Read Excel file
+        wb = load_workbook(filename=io.BytesIO(file.read()))
+        ws = wb.active
+
+        # Find last row with data in column A
+        last_row = 1
+        for row in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row, column=1).value
+            if cell is not None and str(cell).strip():
+                last_row = row
+
+        if last_row < 2:
+            return jsonify({'success': False, 'message': 'No data found in column A starting from row 2'})
+
+        # Read column A from row 2 to last_row (include empty cells)
+        items = []
+        for row in range(2, last_row + 1):
+            cell = ws.cell(row=row, column=1).value
+            if cell is not None:
+                # Handle numeric IMEIs (Excel may read as float)
+                if isinstance(cell, float):
+                    cell = int(cell)
+                items.append(str(cell).strip())
+            else:
+                items.append('')  # Empty cell = empty line
+
+        if not items:
+            return jsonify({'success': False, 'message': 'No items found in Excel file'})
+
+        # Store items for later execution
+        pending_pick_items = items
+
+        # Count non-empty items for display
+        non_empty_count = sum(1 for item in items if item.strip())
+        empty_count = len(items) - non_empty_count
+
+        return jsonify({
+            'success': True,
+            'items': items,
+            'message': f'Loaded {len(items)} rows ({non_empty_count} IMEIs, {empty_count} empty)'
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error reading Excel: {str(e)}'})
+
+
+def execute_pick_batch_worker():
+    """Background worker for batch Pick execution - runs pick_typing.py"""
+    global pick_status, pick_process
+
+    total = len(pending_pick_items)
+    script_path = str(_project_root / 'pick_typing.py')
+    progress_file = 'pick_progress.txt'
+    error_detector = None
+
+    def on_error_detected():
+        """Callback when error detector finds red screen"""
+        pick_status['error_detected'] = True
+        pick_status['message'] = 'Error detected: Red screen - stopping execution...'
+        if pick_process:
+            try:
+                pick_process.terminate()
+            except:
+                pass
+
+    try:
+        pick_status['current'] = 0
+        pick_status['total'] = total
+        pick_status['message'] = 'Starting pick_typing.py...'
+
+        # Start error detector
+        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector.start()
+
+        # Start the process (non-blocking)
+        pick_process = subprocess.Popen(
+            [sys.executable, script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(_project_root)
+        )
+
+        # Poll for progress while process is running
+        while pick_process.poll() is None:
+            # Check if error was detected
+            if pick_status['error_detected']:
+                pick_process.terminate()
+                break
+
+            progress = read_progress_file(progress_file)
+            if progress:
+                current, _ = progress
+                pick_status['current'] = current
+                pick_status['message'] = f'Processing {current}/{total}...'
+            time.sleep(0.3)
+
+        # Process finished
+        stdout, stderr = pick_process.communicate()
+
+        # Check if it was terminated (stopped by user or error detected)
+        if pick_process.returncode == -9 or pick_process.returncode == -15:
+            if not pick_status.get('error_detected', False):
+                pick_status['message'] = f'Stopped at {pick_status["current"]}/{total}'
+                pick_status['result'] = {
+                    'success': False,
+                    'completed': pick_status['current'],
+                    'total': total,
+                    'message': f'Stopped at {pick_status["current"]}/{total}'
+                }
+            else:
+                pick_status['result'] = {
+                    'success': False,
+                    'completed': pick_status['current'],
+                    'total': total,
+                    'message': pick_status['message']
+                }
+        else:
+            pick_status['current'] = total
+            pick_status['message'] = f'Completed {total} items'
+            pick_status['result'] = {
+                'success': True,
+                'completed': total,
+                'total': total,
+                'message': f'Completed {total} items'
+            }
+
+    except Exception as e:
+        pick_status['message'] = f'Error: {str(e)}'
+        pick_status['result'] = {
+            'success': False,
+            'message': str(e)
+        }
+    finally:
+        pick_status['running'] = False
+        if error_detector:
+            error_detector.stop()
+
+
+@app.route('/execute-pick-batch', methods=['POST'])
+def execute_pick_batch():
+    """Start batch Pick execution"""
+    global pick_status, pending_pick_items
+
+    if pick_status['running']:
+        return jsonify({'success': False, 'message': 'Pick batch already in progress'})
+
+    if not pending_pick_items:
+        return jsonify({'success': False, 'message': 'No items loaded. Upload Excel file first.'})
+
+    # Write to pick_data.txt (preserve empty lines for ENTER-only actions)
+    pick_data_file = get_data_file_path('pick_data.txt')
+    with open(pick_data_file, 'w') as f:
+        for item in pending_pick_items:
+            f.write(item + '\n')
+
+    # Reset status
+    pick_status['running'] = True
+    pick_status['current'] = 0
+    pick_status['total'] = len(pending_pick_items)
+    pick_status['message'] = 'Starting...'
+    pick_status['error_detected'] = False
+    pick_status['result'] = None
+
+    # Start background worker
+    thread = threading.Thread(target=execute_pick_batch_worker)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'success': True,
+        'message': f'Started batch: {len(pending_pick_items)} items'
+    })
+
+
+@app.route('/pick-status-stream')
+def pick_status_stream():
+    """Server-Sent Events stream for real-time Pick status updates"""
+    def generate():
+        last_status = None
+        while True:
+            current = json.dumps(pick_status)
+            if current != last_status:
+                yield f"data: {current}\n\n"
+                last_status = current
+            time.sleep(0.3)  # Poll every 300ms
+
+            # Stop streaming if not running and we've sent the final status
+            if not pick_status['running'] and last_status == current:
+                yield f"data: {current}\n\n"
+                break
+
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/pick-pause', methods=['POST'])
+def pause_pick():
+    """Pause the current Pick batch execution"""
+    global pick_status
+
+    if not pick_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+
+    auto = get_automator()
+    auto.request_pause()
+    pick_status['message'] = 'Paused'
+
+    return jsonify({'success': True, 'message': 'Paused'})
+
+
+@app.route('/pick-resume', methods=['POST'])
+def resume_pick():
+    """Resume a paused Pick batch execution"""
+    global pick_status
+
+    if not pick_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+
+    auto = get_automator()
+    auto.request_resume()
+    pick_status['message'] = 'Resumed'
+
+    return jsonify({'success': True, 'message': 'Resumed'})
+
+
+@app.route('/pick-stop', methods=['POST'])
+def stop_pick():
+    """Stop the current Pick batch execution"""
+    global pick_status, pick_process
+
+    if not pick_status['running']:
+        return jsonify({'success': False, 'message': 'No execution in progress'})
+
+    # Terminate the subprocess if running
+    if pick_process is not None:
+        try:
+            pick_process.terminate()
+            pick_status['message'] = 'Stopping...'
+        except:
+            pass
+
+    return jsonify({'success': True, 'message': 'Stop requested'})
+
+
+# ============================================================
 # RESET ROUTE
 # ============================================================
 
@@ -1462,8 +1750,8 @@ def reset_device():
     Reset all data on the Android device.
     If any process is running, pause and stop it first.
     """
-    global execution_status, transfer_status, change_state_status, receive_status
-    global transfer_process, change_state_process, receive_process
+    global execution_status, transfer_status, change_state_status, receive_status, pick_status
+    global transfer_process, change_state_process, receive_process, pick_process
     
     stopped_process = None
     
@@ -1505,6 +1793,18 @@ def reset_device():
             receive_status['running'] = False
             receive_status['message'] = 'Stopped for reset'
             receive_status['error_detected'] = False
+
+        # Check pick process
+        if pick_status.get('running'):
+            stopped_process = 'Pick'
+            if pick_process is not None:
+                try:
+                    pick_process.terminate()
+                except:
+                    pass
+            pick_status['running'] = False
+            pick_status['message'] = 'Stopped for reset'
+            pick_status['error_detected'] = False
 
         # Check automator-based execution
         if execution_status.get('running'):
