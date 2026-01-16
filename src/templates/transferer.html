@@ -285,9 +285,8 @@
         
         <div class="btn-row" id="batchButtons" style="display: none;">
             <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Execute All</button>
-            <button id="pauseBtn" onclick="togglePause()" disabled>Pause</button>
-            <button class="btn-danger" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
-            <button class="btn-warning" id="resetBtn" onclick="resetDevice()">Reset</button>
+            <button class="btn-grey" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
+            <button class="btn-grey" id="resetBtn" onclick="resetDevice()">Reset</button>
         </div>
         
         <div class="progress-container" id="progressContainer">
@@ -319,7 +318,6 @@
         let loadedTransfers = [];
         let eventSource = null;
         let isExecuting = false;
-        let isPaused = false;
         let isStopped = false;
         const originalExecuteBtnText = 'Execute All';
 
@@ -397,7 +395,6 @@
         async function executeBatch() {
             if (!loadedTransfers.length) return;
             isExecuting = true;
-            isPaused = false;
             isStopped = false;
             updateExecutionUI(true);
             
@@ -429,19 +426,6 @@
                 eventSource.close();
                 isExecuting = false;
                 updateExecutionUI(false);
-            }
-        }
-
-        async function togglePause() {
-            const btn = document.getElementById('pauseBtn');
-            if (isPaused) {
-                await fetch('/resume', { method: 'POST' });
-                isPaused = false;
-                btn.textContent = 'Pause';
-            } else {
-                await fetch('/pause', { method: 'POST' });
-                isPaused = true;
-                btn.textContent = 'Resume';
             }
         }
 
@@ -513,10 +497,8 @@
         function updateExecutionUI(exec) {
             const executeBtn = document.getElementById('executeBatchBtn');
             executeBtn.disabled = exec;
-            document.getElementById('pauseBtn').disabled = !exec;
             document.getElementById('stopBtn').disabled = !exec;
             if (!exec) {
-                document.getElementById('pauseBtn').textContent = 'Pause';
                 // Change button text to "Resume" if stopped, otherwise restore original text
                 executeBtn.textContent = isStopped ? 'Resume' : originalExecuteBtnText;
             } else {
