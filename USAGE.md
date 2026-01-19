@@ -12,6 +12,11 @@ pip install flask openpyxl
 ```
 
 ### Emulator Setup (with DNS fix)
+### must be done regardless whether they like it or not we will 
+
+
+
+
 
 #### Start Emulator
 ```bash
