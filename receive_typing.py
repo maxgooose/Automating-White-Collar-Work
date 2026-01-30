@@ -45,23 +45,15 @@ def write_progress(current, total):
 def main():
     # Get data file path (cross-platform)
     data_file = get_data_file_path("receive_data.txt")
-    sublocation_file = get_data_file_path("receive_sublocation.txt")
     
     if not os.path.exists(data_file):
         print(f"ERROR: Data file not found: {data_file}")
         print("Upload an Excel file via the web interface first.")
         sys.exit(1)
     
-    # Read sublocation from file (required)
-    sublocation = ""
-    if os.path.exists(sublocation_file):
-        with open(sublocation_file, "r") as f:
-            sublocation = f.read().strip()
-    
-    if not sublocation:
-        print("ERROR: No sublocation found in receive_sublocation.txt")
-        print("Enter a sublocation in the web interface before executing.")
-        sys.exit(1)
+    # Ask user for sublocation (not used, just for confirmation)
+    sublocation = input("Enter sublocation (press Enter to continue): ").strip()
+    # Sublocation is intentionally not stored or sent anywhere
     
     # Read data from file
     with open(data_file, "r") as f:
@@ -73,26 +65,25 @@ def main():
     
     total = len(items)
     print(f"ADB path: {ADB}")
-    print(f"Sublocation: {sublocation}")
     print(f"Processing {total} items...")
     print("-" * 40)
     
     # Initialize progress
     write_progress(0, total)
     
-    # Type sublocation first and press enter
-    print(f"[SUBLOCATION] {sublocation}")
-    type_text(sublocation)
-    time.sleep(0.1)
-    press_enter()
-    time.sleep(0.1)
+    # Sublocation typing disabled - not sending to device
+    # print(f"[SUBLOCATION] {sublocation}")
+    # type_text(sublocation)
+    # time.sleep(0.1)
+    # press_enter()
+    # time.sleep(0.1)
     
     # First item handled separately
     print(f"[1/{total}] {items[0]}")
     type_text(items[0])
-    time.sleep(0.1)
+    time.sleep(1)
     press_enter()
-    time.sleep(0.1)
+    time.sleep(1)
     current = 1
     write_progress(current, total)
     
@@ -107,12 +98,13 @@ def main():
         # Special handling for non IMEI items
         if item.lower().startswith('ipad') or item.lower().startswith('good') or item.lower().startswith('iphone') or item.lower().startswith('accep') or item.lower().startswith('galaxy'):
             print("  Non IMEI item found - special handling")
-            time.sleep(0.1)
+            time.sleep(1)
             press_enter()
             print("  Enter pressed")
-            time.sleep(0.1)
+            time.sleep(1)
             type_text(item)
             press_enter()
+            time.sleep(1)
             print("  Item typed")
         else:
             time.sleep(0.1)
