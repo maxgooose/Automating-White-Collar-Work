@@ -51,9 +51,12 @@ def main():
         print("Upload an Excel file via the web interface first.")
         sys.exit(1)
     
-    # Ask user for sublocation (not used, just for confirmation)
-    sublocation = input("Enter sublocation (press Enter to continue): ").strip()
-    # Sublocation is intentionally not stored or sent anywhere
+    # Read sublocation from file (written by server)
+    sublocation_file = get_data_file_path("receive_sublocation.txt")
+    sublocation = ""
+    if os.path.exists(sublocation_file):
+        with open(sublocation_file, "r") as f:
+            sublocation = f.read().strip()
     
     # Read data from file
     with open(data_file, "r") as f:
@@ -71,12 +74,13 @@ def main():
     # Initialize progress
     write_progress(0, total)
     
-    # Sublocation typing disabled - not sending to device
-    # print(f"[SUBLOCATION] {sublocation}")
-    # type_text(sublocation)
-    # time.sleep(0.1)
-    # press_enter()
-    # time.sleep(0.1)
+    # Type sublocation and submit
+    if sublocation:
+        print(f"[SUBLOCATION] {sublocation}")
+        type_text(sublocation)
+        time.sleep(0.1)
+        press_enter()
+        time.sleep(0.1)
     
     # First item handled separately
     print(f"[1/{total}] {items[0]}")

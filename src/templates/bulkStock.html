@@ -118,29 +118,6 @@
             margin-top: 16px;
         }
         .btn-row button { flex: 1; margin-top: 0; }
-        .progress-container {
-            margin-top: 20px;
-            display: none;
-        }
-        .progress-container.active { display: block; }
-        .progress-bar {
-            height: 8px;
-            background: #1a1a1a;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background: #4ade80;
-            transition: width 0.3s ease;
-            width: 0%;
-        }
-        .progress-text {
-            font-size: 13px;
-            color: #888;
-            margin-top: 8px;
-            text-align: center;
-        }
         .status {
             margin-top: 16px;
             padding: 12px 16px;
@@ -287,13 +264,6 @@
             <button class="btn-primary" id="executeBatchBtn" onclick="executeBatch()">Add All</button>
             <button class="btn-grey" id="stopBtn" onclick="stopExecution()" disabled>Stop</button>
             <button class="btn-grey" id="resetBtn" onclick="resetDevice()">Reset</button>
-        </div>
-        
-        <div class="progress-container" id="progressContainer">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">0 / 0</div>
         </div>
         
         <div class="status" id="uploadStatus">No file loaded</div>
@@ -471,10 +441,6 @@
         }
 
         function updateProgress(data) {
-            document.getElementById('progressContainer').classList.add('active');
-            const pct = data.total > 0 ? (data.current / data.total) * 100 : 0;
-            document.getElementById('progressFill').style.width = pct + '%';
-            document.getElementById('progressText').textContent = `${data.current} / ${data.total}`;
             if (data.current > 0) renderStockList(data.current - 1, data.current - 1);
 
             // Show/hide error banner

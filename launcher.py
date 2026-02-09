@@ -61,8 +61,18 @@ def install_dependencies():
         capture_output=False
     )
     
+    if result.returncode != 0:
+        print("Standard install failed, retrying with --user flag...")
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', '--user', '-r', str(requirements_file)],
+            capture_output=False
+        )
+    
     if result.returncode == 0:
         print("Dependencies installed successfully.")
+        # Invalidate import caches so newly installed packages are found
+        import importlib
+        importlib.invalidate_caches()
         # Create marker file
         marker = get_project_root() / '.deps_installed'
         marker.touch()
@@ -180,6 +190,10 @@ def start_server(open_browser=True):
     os.chdir(project_root)
     sys.path.insert(0, str(project_root / 'src'))
     
+    # Invalidate import caches in case deps were just installed
+    import importlib
+    importlib.invalidate_caches()
+    
     try:
         # Import and run Flask app
         from transferer_server import app
@@ -189,7 +203,10 @@ def start_server(open_browser=True):
     except Exception as e:
         print(f"\nERROR: {e}")
         print("\nTrying alternative launch method...")
-        subprocess.run([sys.executable, str(server_script)])
+        try:
+            subprocess.run([sys.executable, str(server_script)])
+        except KeyboardInterrupt:
+            print("\nServer stopped.")
 
 
 def main():

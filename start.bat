@@ -51,14 +51,37 @@ REM Install dependencies if needed
 if not exist ".deps_installed" (
     echo.
     echo Installing dependencies...
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
     if %errorlevel% neq 0 (
         echo ERROR: Failed to install dependencies.
-        pause
-        exit /b 1
+        echo Retrying with --user flag...
+        python -m pip install --user -r requirements.txt
+        if %errorlevel% neq 0 (
+            echo ERROR: Failed to install dependencies.
+            pause
+            exit /b 1
+        )
     )
     echo. > .deps_installed
     echo Dependencies installed successfully.
+)
+
+REM Verify Flask is importable before starting server
+python -c "import flask" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo Flask not found. Installing dependencies...
+    python -m pip install -r requirements.txt
+    if %errorlevel% neq 0 (
+        python -m pip install --user -r requirements.txt
+    )
+    python -c "import flask" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo ERROR: Flask still not found after install.
+        echo Try running: python -m pip install flask
+        pause
+        exit /b 1
+    )
 )
 
 REM Start emulator if not already running
