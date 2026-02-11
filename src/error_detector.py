@@ -5,6 +5,7 @@ Thread-safe, non-blocking background monitoring
 """
 import threading
 import time
+import subprocess
 import numpy as np
 from typing import Callable, Optional
 
@@ -19,6 +20,14 @@ try:
 except ImportError:
     pwc = None
     print("Warning: pywinctl not installed. Using full monitor capture.")
+
+try:
+    from adb_utils import get_adb_path
+except ImportError:
+    try:
+        from src.adb_utils import get_adb_path
+    except ImportError:
+        get_adb_path = None
 
 
 class WindowFinder:
@@ -176,8 +185,22 @@ class ErrorDetector:
     # Sampling rate (seconds between captures)
     SAMPLE_RATE = 1.0  # 1 FPS
 
+    # Finale package
+    FINALE_PACKAGE = "com.finaleinventory.denali"
+
+    # Common Android crash/ANR dialog phrases
+    CRASH_KEYWORDS = [
+        "has stopped",
+        "keeps stopping",
+        "isn't responding"
+    ]
+
+    # Prevent repeated crash handling for the same dialog
+    CRASH_DEBOUNCE_SECONDS = 5.0
+
     def __init__(self, callback: Optional[Callable] = None, monitor_index: int = 0,
-                 focus_emulator: bool = True, window_title_patterns: list = None):
+                 focus_emulator: bool = True, window_title_patterns: list = None,
+                 crash_callback: Optional[Callable] = None, package_name: str = None):
         """
         Initialize error detector.
 
@@ -188,14 +211,27 @@ class ErrorDetector:
             window_title_patterns: Custom patterns to match emulator window titles
         """
         self.callback = callback
+        self.crash_callback = crash_callback
         self.monitor_index = monitor_index
         self.focus_emulator = focus_emulator
         self._running = False
         self._thread = None
         self._error_detected = False
+        self._crash_detected = False
         self._sct = None
         self._window_finder = WindowFinder(window_title_patterns) if focus_emulator else None
         self._last_capture_mode = None  # Track capture mode for logging
+        self._last_crash_time = 0
+        self._package_name = package_name or self.FINALE_PACKAGE
+        self._adb_path = None
+
+        if get_adb_path is not None:
+            try:
+                self._adb_path = get_adb_path()
+            except Exception as e:
+                print(f"Warning: ADB not available for crash detection: {e}")
+        else:
+            print("Warning: adb_utils unavailable. Crash detection will be disabled.")
 
         if mss is None:
             print("ERROR: mss library not available. Install with: pip install mss")
@@ -212,6 +248,8 @@ class ErrorDetector:
 
         self._running = True
         self._error_detected = False
+        self._crash_detected = False
+        self._last_crash_time = 0
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
         print("Error detector started")
@@ -299,6 +337,23 @@ class ErrorDetector:
                         self._running = False
                         break
 
+                    # Check for app crash/ANR dialogs and attempt auto-recovery
+                    if self._detect_app_crash():
+                        current_time = time.time()
+                        if current_time - self._last_crash_time >= self.CRASH_DEBOUNCE_SECONDS:
+                            self._last_crash_time = current_time
+                            self._crash_detected = True
+                            print("CRASH DETECTED: Finale app crash/ANR dialog found!")
+
+                            # Attempt best-effort recovery before notifying server callback
+                            self._handle_crash_recovery()
+
+                            if self.crash_callback:
+                                try:
+                                    self.crash_callback()
+                                except Exception as e:
+                                    print(f"Error in crash callback: {e}")
+
                     # Wait before next sample
                     time.sleep(self.SAMPLE_RATE)
 
@@ -355,6 +410,66 @@ class ErrorDetector:
         except Exception as e:
             print(f"Error in red detection: {e}")
             return False
+
+    def _run_adb(self, *args, timeout: int = 5) -> str:
+        """Run an ADB command and return stdout (best-effort)."""
+        if not self._adb_path:
+            return ""
+
+        try:
+            result = subprocess.run(
+                [self._adb_path] + list(args),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return result.stdout.strip()
+        except Exception as e:
+            print(f"Error running ADB for crash detection: {e}")
+            return ""
+
+    def _detect_app_crash(self) -> bool:
+        """Detect Android crash/ANR dialog text in current window state."""
+        output = self._run_adb("shell", "dumpsys", "window", "windows", timeout=5).lower()
+        if not output:
+            return False
+
+        return any(keyword in output for keyword in self.CRASH_KEYWORDS)
+
+    def _handle_crash_recovery(self):
+        """Dismiss crash dialog and relaunch Finale app."""
+        if not self._adb_path:
+            return
+
+        try:
+            # Dismiss the crash dialog (default focused button) to unblock UI.
+            subprocess.run(
+                [self._adb_path, "shell", "input", "keyevent", "KEYCODE_ENTER"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            time.sleep(1)
+
+            # Relaunch Finale app.
+            subprocess.run(
+                [
+                    self._adb_path,
+                    "shell",
+                    "monkey",
+                    "-p",
+                    self._package_name,
+                    "-c",
+                    "android.intent.category.LAUNCHER",
+                    "1"
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error during crash recovery: {e}")
 
 
 # Quick test

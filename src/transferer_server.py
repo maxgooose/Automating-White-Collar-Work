@@ -185,6 +185,10 @@ def upload_excel():
     """
     global pending_batch, pending_transfer_items
     
+    # Clear error state and stop signal from any previous run
+    transfer_status['error_detected'] = False
+    clear_stop_signal('transfer')
+    
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'})
     
@@ -197,7 +201,7 @@ def upload_excel():
     
     try:
         # Read Excel file
-        wb = load_workbook(filename=io.BytesIO(file.read()))
+        wb = load_workbook(filename=io.BytesIO(file.read()), read_only=True, data_only=True)
         ws = wb.active
         
         # Read from row 2 (skip header in row 1)
@@ -226,6 +230,8 @@ def upload_excel():
                 imei_str = str(imei_val).strip()
                 if imei_str:
                     imeis.append(imei_str)
+        
+        wb.close()
         
         if not from_loc or not to_loc:
             return jsonify({'success': False, 'message': 'Row 2 must have From (A) and To (B) sublocations'})
@@ -366,6 +372,21 @@ def execute_transfer_batch_worker(total):
             except:
                 pass
 
+    def on_crash_detected():
+        """Callback when app crash/ANR is detected"""
+        error_at_item[0] = transfer_status['current']
+        transfer_status['error_detected'] = True
+        transfer_status['message'] = (
+            'App crashed: Finale app stopped responding. '
+            'Dialog dismissed and app reopened. Return to the correct page and press Resume.'
+        )
+        create_stop_signal('transfer')
+        if transfer_process:
+            try:
+                transfer_process.terminate()
+            except:
+                pass
+
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('transfer')
@@ -374,7 +395,10 @@ def execute_transfer_batch_worker(total):
         transfer_status['message'] = 'Starting transfer_auto.py...'
 
         # Start error detector
-        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector = ErrorDetector(
+            callback=on_error_detected,
+            crash_callback=on_crash_detected
+        )
         error_detector.start()
 
         # Start the process (non-blocking)
@@ -649,6 +673,10 @@ def upload_change_state_excel():
     """
     global pending_change_state_items
     
+    # Clear error state and stop signal from any previous run
+    change_state_status['error_detected'] = False
+    clear_stop_signal('change_state')
+    
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'})
     
@@ -661,7 +689,7 @@ def upload_change_state_excel():
     
     try:
         # Read Excel file
-        wb = load_workbook(filename=io.BytesIO(file.read()))
+        wb = load_workbook(filename=io.BytesIO(file.read()), read_only=True, data_only=True)
         ws = wb.active
         
         # Collect IMEI (column A) and Product ID (column B) pairs
@@ -691,6 +719,8 @@ def upload_change_state_excel():
                     'imei': imei_str,
                     'new_product_id': product_id_str
                 })
+        
+        wb.close()
         
         if not items:
             return jsonify({'success': False, 'message': 'No valid IMEI/Product ID pairs found (check columns A and B, starting from row 2)'})
@@ -797,6 +827,21 @@ def execute_change_state_batch_worker(items):
             except:
                 pass
 
+    def on_crash_detected():
+        """Callback when app crash/ANR is detected"""
+        error_at_item[0] = change_state_status['current']
+        change_state_status['error_detected'] = True
+        change_state_status['message'] = (
+            'App crashed: Finale app stopped responding. '
+            'Dialog dismissed and app reopened. Return to the correct page and press Resume.'
+        )
+        create_stop_signal('change_state')
+        if change_state_process:
+            try:
+                change_state_process.terminate()
+            except:
+                pass
+
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('change_state')
@@ -805,7 +850,10 @@ def execute_change_state_batch_worker(items):
         change_state_status['message'] = 'Starting change_item_state_auto.py...'
 
         # Start error detector
-        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector = ErrorDetector(
+            callback=on_error_detected,
+            crash_callback=on_crash_detected
+        )
         error_detector.start()
 
         # Start the process (non-blocking)
@@ -1072,6 +1120,10 @@ def upload_receive_excel():
     """
     global pending_receive_items
     
+    # Clear error state and stop signal from any previous run
+    receive_status['error_detected'] = False
+    clear_stop_signal('receive')
+    
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'})
     
@@ -1084,19 +1136,30 @@ def upload_receive_excel():
     
     try:
         # Read Excel file
-        wb = load_workbook(filename=io.BytesIO(file.read()))
+        wb = load_workbook(filename=io.BytesIO(file.read()), read_only=True, data_only=True)
         ws = wb.active
+        
+        # Pre-load all rows into a list for fast random access (read_only mode)
+        all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+        wb.close()
+        max_row = len(all_rows)
+        
+        # Helper to get cell value by 1-based row and column
+        def cell_val(r, c):
+            if r < 1 or r > max_row:
+                return None
+            row_data = all_rows[r - 1]
+            if c < 1 or c > len(row_data):
+                return None
+            return row_data[c - 1]
         
         # Parse Excel according to specification
         items = []
         row = 7  # Fixed start at row 7
         
-        # Get max row
-        max_row = ws.max_row
-        
         while row <= max_row:
             # Check quantity cell in column E
-            qty_cell = ws[f'E{row}'].value
+            qty_cell = cell_val(row, 5)
             
             # If quantity cell is empty, we're done
             if qty_cell is None or qty_cell == '':
@@ -1111,8 +1174,8 @@ def upload_receive_excel():
                 continue
             
             # Get product name from B+C (concatenated)
-            b_val = ws[f'B{row}'].value
-            c_val = ws[f'C{row}'].value
+            b_val = cell_val(row, 2)
+            c_val = cell_val(row, 3)
             product_name = str(b_val or '') + str(c_val or '')
             product_name = product_name.strip()
             
@@ -1124,7 +1187,7 @@ def upload_receive_excel():
             # Collect IMEIs from column D for the quantity range
             imeis = []
             for i in range(qty):
-                imei_cell = ws[f'D{row + i}'].value
+                imei_cell = cell_val(row + i, 4)
                 if imei_cell is not None:
                     # Handle numeric IMEIs (Excel may read as float)
                     if isinstance(imei_cell, float):
@@ -1286,6 +1349,21 @@ def execute_receive_batch_worker(items):
             except:
                 pass
 
+    def on_crash_detected():
+        """Callback when app crash/ANR is detected"""
+        error_at_item[0] = receive_status['current']
+        receive_status['error_detected'] = True
+        receive_status['message'] = (
+            'App crashed: Finale app stopped responding. '
+            'Dialog dismissed and app reopened. Return to the correct page and press Resume.'
+        )
+        create_stop_signal('receive')
+        if receive_process:
+            try:
+                receive_process.terminate()
+            except:
+                pass
+
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('receive')
@@ -1294,7 +1372,10 @@ def execute_receive_batch_worker(items):
         receive_status['message'] = 'Starting receive_typing.py...'
 
         # Start error detector
-        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector = ErrorDetector(
+            callback=on_error_detected,
+            crash_callback=on_crash_detected
+        )
         error_detector.start()
 
         # Start the process (non-blocking)
@@ -1521,6 +1602,10 @@ def upload_pick_excel():
     """
     global pending_pick_items
 
+    # Clear error state and stop signal from any previous run
+    pick_status['error_detected'] = False
+    clear_stop_signal('pick')
+
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'})
 
@@ -1533,23 +1618,29 @@ def upload_pick_excel():
 
     try:
         # Read Excel file
-        wb = load_workbook(filename=io.BytesIO(file.read()))
+        wb = load_workbook(filename=io.BytesIO(file.read()), read_only=True, data_only=True)
         ws = wb.active
 
-        # Find last row with data in column A
+        # Pre-load all rows into a list for fast random access (read_only mode)
+        all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+        wb.close()
+
+        # Find last row with data in column A (1-based indexing)
         last_row = 1
-        for row in range(2, ws.max_row + 1):
-            cell = ws.cell(row=row, column=1).value
+        for idx in range(1, len(all_rows)):  # Start from index 1 = row 2
+            row_data = all_rows[idx]
+            cell = row_data[0] if row_data and len(row_data) > 0 else None
             if cell is not None and str(cell).strip():
-                last_row = row
+                last_row = idx + 1  # Convert back to 1-based
 
         if last_row < 2:
             return jsonify({'success': False, 'message': 'No data found in column A starting from row 2'})
 
         # Read column A from row 2 to last_row (include empty cells)
         items = []
-        for row in range(2, last_row + 1):
-            cell = ws.cell(row=row, column=1).value
+        for idx in range(1, last_row):  # index 1 = row 2, up to last_row
+            row_data = all_rows[idx]
+            cell = row_data[0] if row_data and len(row_data) > 0 else None
             if cell is not None:
                 # Handle numeric IMEIs (Excel may read as float)
                 if isinstance(cell, float):
@@ -1602,6 +1693,21 @@ def execute_pick_batch_worker():
             except:
                 pass
 
+    def on_crash_detected():
+        """Callback when app crash/ANR is detected"""
+        error_at_item[0] = pick_status['current']
+        pick_status['error_detected'] = True
+        pick_status['message'] = (
+            'App crashed: Finale app stopped responding. '
+            'Dialog dismissed and app reopened. Return to the correct page and press Resume.'
+        )
+        create_stop_signal('pick')
+        if pick_process:
+            try:
+                pick_process.terminate()
+            except:
+                pass
+
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('pick')
@@ -1610,7 +1716,10 @@ def execute_pick_batch_worker():
         pick_status['message'] = 'Starting pick_typing.py...'
 
         # Start error detector
-        error_detector = ErrorDetector(callback=on_error_detected)
+        error_detector = ErrorDetector(
+            callback=on_error_detected,
+            crash_callback=on_crash_detected
+        )
         error_detector.start()
 
         # Start the process (non-blocking)

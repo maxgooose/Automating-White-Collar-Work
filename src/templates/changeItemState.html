@@ -246,7 +246,7 @@
     <div class="panel">
         <!-- Error banner (shown when red screen detected) -->
         <div class="error-banner hidden" id="errorBanner">
-            ⚠️ Error Detected: Red screen appeared - execution stopped
+            <span id="errorMessage">Error detected: execution stopped</span>
             <button class="error-banner-close" onclick="closeErrorBanner()">&times;</button>
         </div>
 
@@ -466,12 +466,16 @@
 
             // Show/hide error banner
             const errorBanner = document.getElementById('errorBanner');
+            const errorMessage = document.getElementById('errorMessage');
             console.log('Error detected status:', data.error_detected);
             if (data.error_detected) {
+                errorMessage.textContent = data.message || `Error detected: stopped at item ${data.current}/${data.total}`;
                 errorBanner.classList.remove('hidden');
                 // Set isStopped to true so Execute All becomes "Resume"
                 isStopped = true;
                 console.log('Error banner shown, isStopped set to true');
+            } else {
+                errorBanner.classList.add('hidden');
             }
         }
 

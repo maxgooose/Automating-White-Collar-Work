@@ -658,11 +658,12 @@
             const errorMessage = document.getElementById('errorMessage');
 
             if (data.error_detected) {
-                let itemInfo = '';
+                let fallbackMessage = `Error detected: stopped at item ${data.current}/${data.total}`;
                 if (data.current_item) {
-                    itemInfo = ` (Last processed: ${data.current_item})`;
+                    fallbackMessage += ` (Last processed: ${data.current_item})`;
                 }
-                errorMessage.textContent = `Error Detected: Red screen appeared - stopped at item ${data.current}/${data.total}${itemInfo}`;
+                errorMessage.textContent = data.message || fallbackMessage;
+                isStopped = true;
                 errorBanner.style.display = 'block';
             } else {
                 errorBanner.style.display = 'none';
