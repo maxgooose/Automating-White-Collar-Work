@@ -107,6 +107,7 @@ def main():
             type_text(item)
             time.sleep(3)  # 3 seconds before pressing enter on it
             press_enter()
+            time.sleep(3)  # 3 seconds after pressing enter
             print("  Item typed")
         else:
             time.sleep(0.1)
