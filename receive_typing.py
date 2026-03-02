@@ -102,13 +102,11 @@ def main():
         # Special handling for non IMEI items
         if item.lower().startswith('ipad') or item.lower().startswith('good') or item.lower().startswith('iphone') or item.lower().startswith('accep') or item.lower().startswith('galaxy'):
             print("  Non IMEI item found - special handling")
-            time.sleep(1)
             press_enter()
-            print("  Enter pressed")
-            time.sleep(1)
+            time.sleep(3)  # 3 seconds before text is written
             type_text(item)
+            time.sleep(3)  # 3 seconds before pressing enter on it
             press_enter()
-            time.sleep(1)
             print("  Item typed")
         else:
             time.sleep(0.1)
