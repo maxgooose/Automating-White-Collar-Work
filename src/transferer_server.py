@@ -1173,11 +1173,12 @@ def upload_receive_excel():
                 row += 1
                 continue
             
-            # Get product name from B+C (concatenated)
-            b_val = cell_val(row, 2)
-            c_val = cell_val(row, 3)
-            product_name = str(b_val or '') + str(c_val or '')
-            product_name = product_name.strip()
+            # Get product name from B+C (with space between, dashes replaced by spaces)
+            b_val = str(cell_val(row, 2) or '').strip()
+            c_val = str(cell_val(row, 3) or '').strip()
+            product_name = (b_val + ' ' + c_val).strip().replace('-', ' ')
+            # Collapse any multiple spaces into one
+            product_name = ' '.join(product_name.split())
             
             if not product_name:
                 # Skip if no product name
