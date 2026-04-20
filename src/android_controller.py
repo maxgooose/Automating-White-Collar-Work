@@ -660,7 +660,7 @@ class FinaleAutomator(AndroidController):
             print(f"ERROR during reset: {str(e)}")
             return {
                 'success': False,
-                'message': f'Reset failed: {str(e)}'
+                'message': ''
             }
     
     # ========== CHANGE ITEM STATE ==========

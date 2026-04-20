@@ -462,13 +462,13 @@ def execute_transfer_batch_worker(total):
             }
         else:
             # Non-zero exit with no stderr: process was terminated (user stop
-            # or Windows terminate()=1). Report as a stop, not an unknown error.
-            transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
+            # or Windows terminate()=1). Clear status silently.
+            transfer_status['message'] = ''
             transfer_status['result'] = {
                 'success': False,
                 'completed': transfer_status['current'],
                 'total': total,
-                'message': f'Stopped at {transfer_status["current"]}/{total}'
+                'message': ''
             }
             transfer_status['running'] = False
             
@@ -919,13 +919,13 @@ def execute_change_state_batch_worker(items):
             }
         else:
             # Non-zero exit with no stderr: process was terminated (user stop
-            # or Windows terminate()=1). Report as a stop, not an unknown error.
-            change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
+            # or Windows terminate()=1). Clear status silently.
+            change_state_status['message'] = ''
             change_state_status['result'] = {
                 'success': False,
                 'completed': change_state_status['current'],
                 'total': total,
-                'message': f'Stopped at {change_state_status["current"]}/{total}'
+                'message': ''
             }
             change_state_status['running'] = False
             
@@ -1444,13 +1444,13 @@ def execute_receive_batch_worker(items):
             }
         else:
             # Non-zero exit with no stderr: process was terminated (user stop
-            # or Windows terminate()=1). Report as a stop, not an unknown error.
-            receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
+            # or Windows terminate()=1). Clear status silently.
+            receive_status['message'] = ''
             receive_status['result'] = {
                 'success': False,
                 'completed': receive_status['current'],
                 'total': total,
-                'message': f'Stopped at {receive_status["current"]}/{total}'
+                'message': ''
             }
             receive_status['running'] = False
             
@@ -1787,13 +1787,13 @@ def execute_pick_batch_worker():
             }
         else:
             # Non-zero exit with no stderr: process was terminated (user stop
-            # or Windows terminate()=1). Report as a stop, not a completion.
-            pick_status['message'] = f'Stopped at {pick_status["current"]}/{total}'
+            # or Windows terminate()=1). Clear status silently.
+            pick_status['message'] = ''
             pick_status['result'] = {
                 'success': False,
                 'completed': pick_status['current'],
                 'total': total,
-                'message': f'Stopped at {pick_status["current"]}/{total}'
+                'message': ''
             }
 
     except Exception as e:
@@ -2004,7 +2004,7 @@ def reset_device():
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Reset failed: {str(e)}'
+            'message': ''
         })
 
 

@@ -431,8 +431,8 @@
                     status.className = 'status error';
                 }
             } catch (e) {
-                status.textContent = 'Reset failed: ' + e.message;
-                status.className = 'status error';
+                status.textContent = '';
+                status.className = 'status';
             } finally {
                 resetBtn.disabled = false;
                 resetBtn.textContent = 'Reset';
