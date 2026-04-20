@@ -427,28 +427,18 @@ def execute_transfer_batch_worker(total):
         
         # Process finished
         stdout, stderr = transfer_process.communicate()
-        
-        # Check if it was terminated (stopped by user or error detected)
-        if transfer_process.returncode == -9 or transfer_process.returncode == -15:
-            # Don't overwrite if error was detected - preserve the error status
-            if not transfer_status.get('error_detected', False):
-                transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
-                transfer_status['result'] = {
-                    'success': False,
-                    'completed': transfer_status['current'],
-                    'total': total,
-                    'message': f'Stopped at {transfer_status["current"]}/{total}'
-                }
-            else:
-                # Error was detected - use the progress captured at error time
-                completed = error_at_item[0] if error_at_item[0] is not None else transfer_status['current']
-                transfer_status['current'] = completed  # Reset to error point
-                transfer_status['result'] = {
-                    'success': False,
-                    'completed': completed,
-                    'total': total,
-                    'message': transfer_status['message']  # Keep the error message
-                }
+        stderr_text = stderr.decode().strip() if stderr else ''
+
+        if transfer_status.get('error_detected', False):
+            # Red screen or crash was detected by ErrorDetector
+            completed = error_at_item[0] if error_at_item[0] is not None else transfer_status['current']
+            transfer_status['current'] = completed
+            transfer_status['result'] = {
+                'success': False,
+                'completed': completed,
+                'total': total,
+                'message': transfer_status['message']  # Keep the error message
+            }
             transfer_status['running'] = False
         elif transfer_process.returncode == 0:
             transfer_status['current'] = total
@@ -460,15 +450,27 @@ def execute_transfer_batch_worker(total):
                 'message': f'Completed all {total} transfers'
             }
             transfer_status['running'] = False  # Set last to avoid race condition
-        else:
+        elif stderr_text:
+            # Real script error with diagnostic output
             transfer_status['running'] = False
-            transfer_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            transfer_status['message'] = f'Script error: {stderr_text}'
             transfer_status['result'] = {
                 'success': False,
                 'completed': transfer_status['current'],
                 'total': total,
-                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+                'message': f'Script error: {stderr_text}'
             }
+        else:
+            # Non-zero exit with no stderr: process was terminated (user stop
+            # or Windows terminate()=1). Report as a stop, not an unknown error.
+            transfer_status['message'] = f'Stopped at {transfer_status["current"]}/{total}'
+            transfer_status['result'] = {
+                'success': False,
+                'completed': transfer_status['current'],
+                'total': total,
+                'message': f'Stopped at {transfer_status["current"]}/{total}'
+            }
+            transfer_status['running'] = False
             
     except Exception as e:
         transfer_status['running'] = False
@@ -882,28 +884,18 @@ def execute_change_state_batch_worker(items):
         
         # Process finished
         stdout, stderr = change_state_process.communicate()
-        
-        # Check if it was terminated (stopped by user or error detected)
-        if change_state_process.returncode == -9 or change_state_process.returncode == -15:
-            # Don't overwrite if error was detected - preserve the error status
-            if not change_state_status.get('error_detected', False):
-                change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
-                change_state_status['result'] = {
-                    'success': False,
-                    'completed': change_state_status['current'],
-                    'total': total,
-                    'message': f'Stopped at {change_state_status["current"]}/{total}'
-                }
-            else:
-                # Error was detected - use the progress captured at error time
-                completed = error_at_item[0] if error_at_item[0] is not None else change_state_status['current']
-                change_state_status['current'] = completed  # Reset to error point
-                change_state_status['result'] = {
-                    'success': False,
-                    'completed': completed,
-                    'total': total,
-                    'message': change_state_status['message']  # Keep the error message
-                }
+        stderr_text = stderr.decode().strip() if stderr else ''
+
+        if change_state_status.get('error_detected', False):
+            # Red screen or crash was detected by ErrorDetector
+            completed = error_at_item[0] if error_at_item[0] is not None else change_state_status['current']
+            change_state_status['current'] = completed
+            change_state_status['result'] = {
+                'success': False,
+                'completed': completed,
+                'total': total,
+                'message': change_state_status['message']  # Keep the error message
+            }
             change_state_status['running'] = False
         elif change_state_process.returncode == 0:
             change_state_status['current'] = total
@@ -915,15 +907,27 @@ def execute_change_state_batch_worker(items):
                 'message': f'Completed all {total} item state changes'
             }
             change_state_status['running'] = False  # Set last to avoid race condition
-        else:
+        elif stderr_text:
+            # Real script error with diagnostic output
             change_state_status['running'] = False
-            change_state_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            change_state_status['message'] = f'Script error: {stderr_text}'
             change_state_status['result'] = {
                 'success': False,
                 'completed': change_state_status['current'],
                 'total': total,
-                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+                'message': f'Script error: {stderr_text}'
             }
+        else:
+            # Non-zero exit with no stderr: process was terminated (user stop
+            # or Windows terminate()=1). Report as a stop, not an unknown error.
+            change_state_status['message'] = f'Stopped at {change_state_status["current"]}/{total}'
+            change_state_status['result'] = {
+                'success': False,
+                'completed': change_state_status['current'],
+                'total': total,
+                'message': f'Stopped at {change_state_status["current"]}/{total}'
+            }
+            change_state_status['running'] = False
             
     except Exception as e:
         change_state_status['running'] = False
@@ -1405,28 +1409,18 @@ def execute_receive_batch_worker(items):
         
         # Process finished
         stdout, stderr = receive_process.communicate()
-        
-        # Check if it was terminated (stopped by user or error detected)
-        if receive_process.returncode == -9 or receive_process.returncode == -15:
-            # Don't overwrite if error was detected - preserve the error status
-            if not receive_status.get('error_detected', False):
-                receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
-                receive_status['result'] = {
-                    'success': False,
-                    'completed': receive_status['current'],
-                    'total': total,
-                    'message': f'Stopped at {receive_status["current"]}/{total}'
-                }
-            else:
-                # Error was detected - use the progress captured at error time
-                completed = error_at_item[0] if error_at_item[0] is not None else receive_status['current']
-                receive_status['current'] = completed  # Reset to error point
-                receive_status['result'] = {
-                    'success': False,
-                    'completed': completed,
-                    'total': total,
-                    'message': receive_status['message']  # Keep the error message
-                }
+        stderr_text = stderr.decode().strip() if stderr else ''
+
+        if receive_status.get('error_detected', False):
+            # Red screen or crash was detected by ErrorDetector
+            completed = error_at_item[0] if error_at_item[0] is not None else receive_status['current']
+            receive_status['current'] = completed
+            receive_status['result'] = {
+                'success': False,
+                'completed': completed,
+                'total': total,
+                'message': receive_status['message']  # Keep the error message
+            }
             receive_status['running'] = False
         elif receive_process.returncode == 0:
             receive_status['current'] = total
@@ -1438,15 +1432,27 @@ def execute_receive_batch_worker(items):
                 'message': f'Completed all {total} receive operations'
             }
             receive_status['running'] = False  # Set last to avoid race condition
-        else:
+        elif stderr_text:
+            # Real script error with diagnostic output
             receive_status['running'] = False
-            receive_status['message'] = f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+            receive_status['message'] = f'Script error: {stderr_text}'
             receive_status['result'] = {
                 'success': False,
                 'completed': receive_status['current'],
                 'total': total,
-                'message': f'Script error: {stderr.decode() if stderr else "Unknown error"}'
+                'message': f'Script error: {stderr_text}'
             }
+        else:
+            # Non-zero exit with no stderr: process was terminated (user stop
+            # or Windows terminate()=1). Report as a stop, not an unknown error.
+            receive_status['message'] = f'Stopped at {receive_status["current"]}/{total}'
+            receive_status['result'] = {
+                'success': False,
+                'completed': receive_status['current'],
+                'total': total,
+                'message': f'Stopped at {receive_status["current"]}/{total}'
+            }
+            receive_status['running'] = False
             
     except Exception as e:
         receive_status['running'] = False
@@ -1749,28 +1755,19 @@ def execute_pick_batch_worker():
 
         # Process finished
         stdout, stderr = pick_process.communicate()
+        stderr_text = stderr.decode().strip() if stderr else ''
 
-        # Check if it was terminated (stopped by user or error detected)
-        if pick_process.returncode == -9 or pick_process.returncode == -15:
-            if not pick_status.get('error_detected', False):
-                pick_status['message'] = f'Stopped at {pick_status["current"]}/{total}'
-                pick_status['result'] = {
-                    'success': False,
-                    'completed': pick_status['current'],
-                    'total': total,
-                    'message': f'Stopped at {pick_status["current"]}/{total}'
-                }
-            else:
-                # Error was detected - use the progress captured at error time
-                completed = error_at_item[0] if error_at_item[0] is not None else pick_status['current']
-                pick_status['current'] = completed  # Reset to error point
-                pick_status['result'] = {
-                    'success': False,
-                    'completed': completed,
-                    'total': total,
-                    'message': pick_status['message']
-                }
-        else:
+        if pick_status.get('error_detected', False):
+            # Red screen or crash was detected by ErrorDetector
+            completed = error_at_item[0] if error_at_item[0] is not None else pick_status['current']
+            pick_status['current'] = completed
+            pick_status['result'] = {
+                'success': False,
+                'completed': completed,
+                'total': total,
+                'message': pick_status['message']
+            }
+        elif pick_process.returncode == 0:
             pick_status['current'] = total
             pick_status['message'] = f'Completed {total} items'
             pick_status['result'] = {
@@ -1778,6 +1775,25 @@ def execute_pick_batch_worker():
                 'completed': total,
                 'total': total,
                 'message': f'Completed {total} items'
+            }
+        elif stderr_text:
+            # Real script error with diagnostic output
+            pick_status['message'] = f'Script error: {stderr_text}'
+            pick_status['result'] = {
+                'success': False,
+                'completed': pick_status['current'],
+                'total': total,
+                'message': f'Script error: {stderr_text}'
+            }
+        else:
+            # Non-zero exit with no stderr: process was terminated (user stop
+            # or Windows terminate()=1). Report as a stop, not a completion.
+            pick_status['message'] = f'Stopped at {pick_status["current"]}/{total}'
+            pick_status['result'] = {
+                'success': False,
+                'completed': pick_status['current'],
+                'total': total,
+                'message': f'Stopped at {pick_status["current"]}/{total}'
             }
 
     except Exception as e:
