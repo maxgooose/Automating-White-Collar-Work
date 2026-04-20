@@ -1806,6 +1806,7 @@ def execute_pick_batch_worker():
         pick_status['running'] = False
         if error_detector:
             error_detector.stop()
+        pick_process = None
 
 
 @app.route('/execute-pick-batch', methods=['POST'])
