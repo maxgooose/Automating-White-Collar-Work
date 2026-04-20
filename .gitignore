@@ -45,3 +45,5 @@ ui_dump.xml
 # Data files
 receive_data.txt
 
+# Claude Code project instructions (local only)
+CLAUDE.md
