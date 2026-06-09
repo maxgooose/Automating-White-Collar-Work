@@ -109,8 +109,24 @@ package/
 cd package\python
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python.exe get-pip.py
-python.exe -m pip install flask==3.0.3 openpyxl==3.1.2
+python.exe -m pip install flask==3.0.3 openpyxl==3.1.2 mss==9.0.1 numpy==1.26.4 pywinctl pytesseract==0.3.10 Pillow==10.4.0
 ```
+
+### Add Tesseract OCR Engine (for duplicate-barcode skipping):
+
+The Receive flow reads the screen with OCR to detect and skip the
+"Barcode already exists!" duplicate screen. This needs the Tesseract **engine**
+(`pytesseract` is only a Python wrapper around it).
+
+1. Download the Windows installer from https://github.com/UB-Mannheim/tesseract/wiki
+2. Install it (default path `C:\Program Files\Tesseract-OCR\`)
+3. Either add that folder to the system **PATH**, or — for a self-contained
+   package — copy the `Tesseract-OCR` folder into `package/` and set the
+   `TESSERACT_CMD` environment variable to its `tesseract.exe` before launching.
+
+> If Tesseract is not installed the tools still run — the Receive flow simply
+> falls back to *stopping* on the duplicate screen (the previous behavior)
+> instead of auto-skipping it.
 
 ### Add Application Code:
 

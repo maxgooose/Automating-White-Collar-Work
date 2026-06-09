@@ -200,7 +200,8 @@ class ErrorDetector:
 
     def __init__(self, callback: Optional[Callable] = None, monitor_index: int = 0,
                  focus_emulator: bool = True, window_title_patterns: list = None,
-                 crash_callback: Optional[Callable] = None, package_name: str = None):
+                 crash_callback: Optional[Callable] = None, package_name: str = None,
+                 detect_red: bool = True):
         """
         Initialize error detector.
 
@@ -209,9 +210,13 @@ class ErrorDetector:
             monitor_index: Which monitor to capture (0 = primary) - used as fallback
             focus_emulator: If True, try to capture only the emulator window
             window_title_patterns: Custom patterns to match emulator window titles
+            detect_red: If False, ignore red-screen errors (crash detection still
+                        runs). Used by the receive flow, which handles the
+                        duplicate-barcode red screen in-script via screen_inspect.
         """
         self.callback = callback
         self.crash_callback = crash_callback
+        self._detect_red_enabled = detect_red
         self.monitor_index = monitor_index
         self.focus_emulator = focus_emulator
         self._running = False
@@ -321,8 +326,11 @@ class ErrorDetector:
                     # Convert to numpy array (RGB)
                     img = np.array(screenshot)
 
-                    # Check for red pixels
-                    if self._detect_red(img):
+                    # Check for red pixels. Can be disabled per-flow (e.g. the
+                    # receive flow handles the duplicate-barcode red screen
+                    # in-script via screen_inspect, so the server must not treat
+                    # that red screen as a fatal stop).
+                    if self._detect_red_enabled and self._detect_red(img):
                         self._error_detected = True
                         print("ERROR DETECTED: Red screen indicator found!")
 

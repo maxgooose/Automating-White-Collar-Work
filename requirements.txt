@@ -3,3 +3,5 @@ openpyxl==3.1.2
 mss==9.0.1
 numpy==1.26.4
 pywinctl>=0.4.1
+pytesseract==0.3.10
+Pillow>=10.0.0

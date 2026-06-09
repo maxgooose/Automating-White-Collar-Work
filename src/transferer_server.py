@@ -65,7 +65,8 @@ receive_status = {
     'total': 0,
     'current_item': None,
     'message': '',
-    'error_detected': False
+    'error_detected': False,
+    'skipped': 0
 }
 pending_receive_items = []
 receive_process = None  # Store subprocess for stop functionality
@@ -347,6 +348,18 @@ def read_progress_file(filename):
     except:
         pass
     return None
+
+
+def count_skipped_file(filename='receive_skipped.txt'):
+    """Count non-empty lines in a skipped-items log file (0 if missing)."""
+    try:
+        path = get_data_file_path(filename)
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return sum(1 for line in f if line.strip())
+    except:
+        pass
+    return 0
 
 
 def execute_transfer_batch_worker(total):
@@ -1372,14 +1385,25 @@ def execute_receive_batch_worker(items):
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('receive')
+        # Reset the skipped log + count for this run
+        skipped_path = get_data_file_path('receive_skipped.txt')
+        try:
+            if os.path.exists(skipped_path):
+                os.remove(skipped_path)
+        except OSError:
+            pass
+        receive_status['skipped'] = 0
         receive_status['current'] = 0
         receive_status['total'] = total
         receive_status['message'] = 'Starting receive_typing.py...'
 
-        # Start error detector
+        # Start error detector. detect_red=False: the duplicate-barcode red screen
+        # is now handled in-script by receive_typing.py (press Back + skip), so the
+        # server must not treat that red screen as a fatal stop. Crash/ANR
+        # detection stays on.
         error_detector = ErrorDetector(
-            callback=on_error_detected,
-            crash_callback=on_crash_detected
+            crash_callback=on_crash_detected,
+            detect_red=False
         )
         error_detector.start()
 
@@ -1405,6 +1429,9 @@ def execute_receive_batch_worker(items):
                 if not receive_status['error_detected']:
                     receive_status['current'] = current
                     receive_status['message'] = f'Processing {current}/{total}...'
+            # Reflect any IMEIs the script skipped as duplicates
+            if not receive_status['error_detected']:
+                receive_status['skipped'] = count_skipped_file()
             time.sleep(0.3)
         
         # Process finished
@@ -1423,13 +1450,17 @@ def execute_receive_batch_worker(items):
             }
             receive_status['running'] = False
         elif receive_process.returncode == 0:
+            skipped = count_skipped_file()
+            receive_status['skipped'] = skipped
             receive_status['current'] = total
-            receive_status['message'] = f'Completed all {total} items'
+            suffix = f' ({skipped} skipped)' if skipped else ''
+            receive_status['message'] = f'Completed all {total} items{suffix}'
             receive_status['result'] = {
                 'success': True,
                 'completed': total,
                 'total': total,
-                'message': f'Completed all {total} receive operations'
+                'skipped': skipped,
+                'message': f'Completed all {total} receive operations{suffix}'
             }
             receive_status['running'] = False  # Set last to avoid race condition
         elif stderr_text:
@@ -1504,7 +1535,8 @@ def execute_receive_batch():
         'current_item': None,
         'message': 'Starting batch execution...',
         'result': None,
-        'error_detected': False
+        'error_detected': False,
+        'skipped': 0
     }
     
     # Start background thread to run receive_typing.py

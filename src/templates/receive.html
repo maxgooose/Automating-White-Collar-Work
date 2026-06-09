@@ -653,6 +653,15 @@
         function updateProgress(data) {
             if (data.current > 0) renderReceiveList(data.current - 1, data.current - 1);
 
+            // Live progress text, including any duplicates that were skipped
+            if (data.running) {
+                const status = document.getElementById('uploadStatus');
+                let txt = `Processing ${data.current}/${data.total}`;
+                if (data.skipped) txt += ` · ${data.skipped} skipped (already exists)`;
+                status.className = 'status';
+                status.textContent = txt;
+            }
+
             // Show/hide error banner
             const errorBanner = document.getElementById('errorBanner');
             const errorMessage = document.getElementById('errorMessage');

@@ -50,12 +50,18 @@ The application opens automatically at `http://localhost:5000`.
 |-----------|-----------------|----------|
 | Python | 3.8+ | https://www.python.org/downloads/ |
 | Android SDK Platform Tools | Latest | https://developer.android.com/studio/releases/platform-tools |
+| Tesseract OCR engine | 5.x (optional) | Windows: https://github.com/UB-Mannheim/tesseract/wiki · macOS: `brew install tesseract` |
 
 ### Python Packages
 
-Installed automatically by the launcher:
-- Flask 3.0+
-- openpyxl 3.1+
+Installed automatically by the launcher (full list in `requirements.txt`):
+- Flask 3.0+, openpyxl 3.1+
+- mss, numpy, pywinctl (screen / error detection)
+- **pytesseract + Pillow** — used by the Receive flow to read the screen and skip
+  "Barcode already exists!" duplicates. These also need the **Tesseract OCR
+  engine** installed separately (see the table above). If Tesseract is missing the
+  app still runs — the Receive flow just falls back to *stopping* on the duplicate
+  screen instead of auto-skipping it.
 
 ---
 
