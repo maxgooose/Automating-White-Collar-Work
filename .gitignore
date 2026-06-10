@@ -42,8 +42,19 @@ ui_dump.xml
 # Dependency marker file
 .deps_installed
 
-# Data files
+# Machine-specific Python path written by tools/bootstrap.ps1
+.python_path
+
+# Stop-signal files (server <-> script IPC, per-run only)
+*_stop.txt
+
+# Data and progress files generated at runtime (contain customer IMEIs)
 receive_data.txt
+transfer_data.txt
+pick_data.txt
+receive_sublocation.txt
+receive_skipped.txt
+*_progress.txt
 
 # Claude Code project instructions (local only)
 CLAUDE.md
