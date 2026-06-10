@@ -351,6 +351,7 @@
         <!-- Shown whenever skipped duplicates exist, independent of file state -->
         <div class="btn-row" id="skippedRow" style="display: none;">
             <button class="btn-grey" id="downloadSkippedBtn" onclick="downloadSkipped()">Download skipped</button>
+            <button class="btn-grey" id="clearSkippedBtn" onclick="clearSkipped()">Clear skipped</button>
         </div>
 
         <div class="status error" id="ocrWarning" style="display: none;">
@@ -409,6 +410,20 @@
 
         function downloadSkipped() {
             window.location = '/download-receive-skipped';
+        }
+
+        async function clearSkipped() {
+            try {
+                const res = await fetch('/receive-skipped-clear', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    updateSkippedButton(0);
+                } else {
+                    const status = document.getElementById('uploadStatus');
+                    status.className = 'status error';
+                    status.textContent = data.message;
+                }
+            } catch (e) { /* server unreachable */ }
         }
 
         async function checkDeviceStatus() {

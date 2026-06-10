@@ -1838,6 +1838,24 @@ def receive_skipped_count():
     return jsonify({'count': count_skipped_file()})
 
 
+@app.route('/receive-skipped-clear', methods=['POST'])
+def clear_receive_skipped():
+    """Manually clear the skipped-duplicates log.
+
+    Blocked while a batch runs: the live run counts this file, and clearing
+    mid-run would also lose records a Resume is supposed to keep.
+    """
+    if receive_status['running']:
+        return jsonify({'success': False, 'message': 'Cannot clear while a batch is running'})
+    path = get_data_file_path('receive_skipped.txt')
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError as e:
+        return jsonify({'success': False, 'message': f'Could not clear: {e}'})
+    return jsonify({'success': True, 'message': 'Skipped list cleared'})
+
+
 @app.route('/download-receive-skipped')
 def download_receive_skipped():
     """Download the skipped-duplicates log as an Excel file."""
