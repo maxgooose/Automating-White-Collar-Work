@@ -2,8 +2,8 @@
 Transferer Server - Web interface for inventory transfers
 Cross-platform compatible (Windows, macOS, Linux).
 """
-from flask import Flask, render_template, request, jsonify, Response
-from openpyxl import load_workbook
+from flask import Flask, render_template, request, jsonify, Response, send_file
+from openpyxl import load_workbook, Workbook
 import io
 import json
 import subprocess
@@ -23,8 +23,9 @@ sys.path.insert(0, str(_script_dir))
 sys.path.insert(0, str(_project_root))
 
 from android_controller import FinaleAutomator
-from adb_utils import get_data_file_path, create_stop_signal, clear_stop_signal
+from adb_utils import get_data_file_path, create_stop_signal, clear_stop_signal, PRODUCT_MARKER
 from error_detector import ErrorDetector
+from screen_inspect import OCR_AVAILABLE
 
 app = Flask(__name__)
 
@@ -63,10 +64,12 @@ receive_status = {
     'running': False,
     'current': 0,
     'total': 0,
+    'offset': 0,
     'current_item': None,
     'message': '',
     'error_detected': False,
-    'skipped': 0
+    'skipped': 0,
+    'ocr_available': OCR_AVAILABLE
 }
 pending_receive_items = []
 receive_process = None  # Store subprocess for stop functionality
@@ -82,6 +85,57 @@ pick_status = {
 }
 pending_pick_items = []
 pick_process = None  # Store subprocess for stop functionality
+
+
+# ============================================================
+# DEVICE LOCK - one Android device, one batch at a time
+# ============================================================
+# Every flow types into the same phone; two running at once interleave
+# keystrokes and silently corrupt inventory data.
+device_lock = threading.Lock()
+device_owner = None  # flow key currently driving the device, or None
+
+FLOW_LABELS = {
+    'stock': 'Stock',
+    'transfer': 'Transfer',
+    'receive': 'Receive',
+    'pick': 'Pick',
+    'change_state': 'Change Item State',
+}
+
+
+def try_acquire_device(flow):
+    """Claim the device for a flow. Returns None on success, else the flow
+    key currently holding it."""
+    global device_owner
+    with device_lock:
+        if device_owner is None:
+            device_owner = flow
+            return None
+        return device_owner
+
+
+def release_device(flow):
+    """Release the device if held by this flow (idempotent)."""
+    global device_owner
+    with device_lock:
+        if device_owner == flow:
+            device_owner = None
+
+
+def force_release_device():
+    """Clear the device claim regardless of owner (used by /reset)."""
+    global device_owner
+    with device_lock:
+        device_owner = None
+
+
+def device_busy_response(owner):
+    label = FLOW_LABELS.get(owner, owner)
+    return jsonify({
+        'success': False,
+        'message': f'A {label} batch is running. Stop it first.'
+    })
 
 
 def get_automator():
@@ -138,25 +192,31 @@ def execute_single():
     
     if not all([from_location, to_location, imei]):
         return jsonify({'success': False, 'message': 'All fields are required'})
-    
+
+    owner = try_acquire_device('transfer')
+    if owner:
+        return device_busy_response(owner)
+
     try:
         execution_status['running'] = True
         execution_status['current'] = 1
         execution_status['total'] = 1
         execution_status['message'] = 'Executing transfer...'
-        
+
         auto = get_automator()
         result = auto.execute_transfer(from_location, to_location, imei)
-        
+
         execution_status['running'] = False
         execution_status['message'] = result['message']
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         execution_status['running'] = False
         execution_status['message'] = f'Error: {str(e)}'
         return jsonify({'success': False, 'message': str(e)})
+    finally:
+        release_device('transfer')
 
 # NOTE: Change Item State upload at /change-state/upload writes to receive.txt and runs change_item_state_auto.py
 # This /upload route is for Transfer: reads col A=from, B=to, C=imei starting from row 2
@@ -279,20 +339,26 @@ def upload_excel():
 def execute_batch_worker(from_loc, to_loc, imeis):
     """Background worker for batch execution - same locations for all IMEIs"""
     global execution_status
-    
-    auto = get_automator()
-    
-    def progress_callback(current, total, status, imei):
-        execution_status['current'] = current
-        execution_status['total'] = total
-        execution_status['current_item'] = {'from': from_loc, 'to': to_loc, 'imei': imei}
-        execution_status['message'] = f'{status}: {imei}'
-    
-    result = auto.execute_same_location_batch(from_loc, to_loc, imeis, progress_callback)
-    
-    execution_status['running'] = False
-    execution_status['message'] = result['message']
-    execution_status['result'] = result
+
+    try:
+        auto = get_automator()
+
+        def progress_callback(current, total, status, imei):
+            execution_status['current'] = current
+            execution_status['total'] = total
+            execution_status['current_item'] = {'from': from_loc, 'to': to_loc, 'imei': imei}
+            execution_status['message'] = f'{status}: {imei}'
+
+        result = auto.execute_same_location_batch(from_loc, to_loc, imeis, progress_callback)
+
+        execution_status['message'] = result['message']
+        execution_status['result'] = result
+    except Exception as e:
+        execution_status['message'] = f'Error: {str(e)}'
+        execution_status['result'] = {'success': False, 'message': str(e)}
+    finally:
+        execution_status['running'] = False
+        release_device('stock')
 
 
 @app.route('/execute-batch', methods=['POST'])
@@ -313,7 +379,11 @@ def execute_batch():
     
     if not from_loc or not to_loc:
         return jsonify({'success': False, 'message': 'Missing from/to locations'})
-    
+
+    owner = try_acquire_device('stock')
+    if owner:
+        return device_busy_response(owner)
+
     # Reset status
     execution_status = {
         'running': True,
@@ -350,6 +420,145 @@ def read_progress_file(filename):
     return None
 
 
+def compute_resume_remainder(flow):
+    """Build trimmed data-file content so a stopped batch continues where it
+    left off instead of re-running completed items.
+
+    Reads the flow's progress file (current,total) and data file. Returns
+    {'content': str, 'done': int, 'remaining': int} or None when resume is
+    not possible (no/finished progress, or files inconsistent with the run).
+    """
+    progress_files = {
+        'transfer': 'transfer_progress.txt',
+        'pick': 'pick_progress.txt',
+        'receive': 'receive_progress.txt',
+        'change_state': 'change_state_progress.txt',
+    }
+    data_files = {
+        'transfer': 'transfer_data.txt',
+        'pick': 'pick_data.txt',
+        'receive': 'receive_data.txt',
+        'change_state': 'receive.txt',
+    }
+
+    progress = read_progress_file(progress_files[flow])
+    if not progress:
+        return None
+    done, total = progress
+    if done <= 0 or done >= total:
+        return None
+
+    data_path = get_data_file_path(data_files[flow])
+    if not os.path.exists(data_path):
+        return None
+
+    if flow == 'pick':
+        # Raw lines; empty lines are meaningful (ENTER-only). The script drops
+        # trailing empties, so mirror that before trimming.
+        with open(data_path, 'r') as f:
+            lines = [line.rstrip('\n\r') for line in f]
+        while lines and lines[-1] == '':
+            lines.pop()
+        if len(lines) != total:
+            return None
+        remaining = lines[done:]
+        if not remaining:
+            return None
+        return {
+            'content': '\n'.join(remaining) + '\n',
+            'done': done,
+            'remaining': len(remaining),
+        }
+
+    with open(data_path, 'r') as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    if flow == 'transfer':
+        # Line 1 from, line 2 to, rest IMEIs; progress counts IMEIs.
+        if len(lines) < 3 or len(lines) - 2 != total:
+            return None
+        header, imeis = lines[:2], lines[2:]
+        remaining = imeis[done:]
+        if not remaining:
+            return None
+        return {
+            'content': '\n'.join(header + remaining) + '\n',
+            'done': done,
+            'remaining': len(remaining),
+        }
+
+    if flow == 'receive':
+        # Marked product/IMEI lines; progress counts all lines. Only resume
+        # marker-format files (anything else can't be trimmed safely).
+        if len(lines) != total or not any(l.startswith(PRODUCT_MARKER) for l in lines):
+            return None
+        remaining = lines[done:]
+        if not remaining:
+            return None
+        # Re-establish product context when resuming mid-group.
+        if not remaining[0].startswith(PRODUCT_MARKER):
+            last_product = None
+            for l in lines[:done]:
+                if l.startswith(PRODUCT_MARKER):
+                    last_product = l
+            if last_product:
+                remaining = [last_product] + remaining
+        return {
+            'content': '\n'.join(remaining) + '\n',
+            'done': done,
+            'remaining': len(remaining),
+        }
+
+    if flow == 'change_state':
+        # IMEI/ProductID pairs; progress counts pairs.
+        pairs = [(lines[i], lines[i + 1]) for i in range(0, len(lines) - 1, 2)]
+        if len(pairs) != total:
+            return None
+        remaining = pairs[done:]
+        if not remaining:
+            return None
+        flat = [v for pair in remaining for v in pair]
+        return {
+            'content': '\n'.join(flat) + '\n',
+            'done': done,
+            'remaining': len(remaining),
+        }
+
+    return None
+
+
+def apply_resume(flow, status_dict):
+    """Trim the flow's data file for a resume request.
+
+    Returns (offset, remaining) when the batch will continue from where it
+    stopped, or None when resume isn't possible (caller falls back to a full
+    run). Offsets accumulate across chained resumes for correct display.
+    """
+    trimmed = compute_resume_remainder(flow)
+    if not trimmed:
+        return None
+    data_files = {
+        'transfer': 'transfer_data.txt',
+        'pick': 'pick_data.txt',
+        'receive': 'receive_data.txt',
+        'change_state': 'receive.txt',
+    }
+    progress_files = {
+        'transfer': 'transfer_progress.txt',
+        'pick': 'pick_progress.txt',
+        'receive': 'receive_progress.txt',
+        'change_state': 'change_state_progress.txt',
+    }
+    with open(get_data_file_path(data_files[flow]), 'w') as f:
+        f.write(trimmed['content'])
+    with open(get_data_file_path(progress_files[flow]), 'w') as f:
+        f.write(f"0,{trimmed['remaining']}")
+    offset = status_dict.get('offset', 0) + trimmed['done']
+    print(f"Resume {flow}: {trimmed['done']} done this segment "
+          f"({offset} total), {trimmed['remaining']} remaining")
+    return offset, trimmed['remaining']
+
+
 def count_skipped_file(filename='receive_skipped.txt'):
     """Count non-empty lines in a skipped-items log file (0 if missing)."""
     try:
@@ -376,7 +585,8 @@ def execute_transfer_batch_worker(total):
         # Capture the current progress at the moment of error
         error_at_item[0] = transfer_status['current']
         transfer_status['error_detected'] = True
-        transfer_status['message'] = 'Error detected: Red screen - stopping execution...'
+        transfer_status['message'] = ('Error detected: Red screen - stopping. '
+             'Dismiss the error on the device, then press Resume.')
         # Create stop signal FIRST so script sees it before terminate
         create_stop_signal('transfer')
         if transfer_process:
@@ -499,6 +709,10 @@ def execute_transfer_batch_worker(total):
         if error_detector:
             error_detector.stop()
         transfer_process = None
+        # The stop signal only targets the run that just ended; never leave it
+        # behind to kill a future run.
+        clear_stop_signal('transfer')
+        release_device('transfer')
 
 
 @app.route('/execute-transfer-batch', methods=['POST'])
@@ -508,19 +722,29 @@ def execute_transfer_batch():
     
     if transfer_status['running']:
         return jsonify({'success': False, 'message': 'Another execution is in progress'})
-    
-    if not pending_transfer_items:
-        return jsonify({'success': False, 'message': 'No items to execute. Upload Excel file first.'})
-    
+
+    owner = try_acquire_device('transfer')
+    if owner:
+        return device_busy_response(owner)
+
+    data = request.json or {}
+    offset = 0
     total = len(pending_transfer_items)
-    
+    resumed = apply_resume('transfer', transfer_status) if data.get('resume') else None
+    if resumed:
+        offset, total = resumed
+    elif not pending_transfer_items:
+        release_device('transfer')
+        return jsonify({'success': False, 'message': 'No items to execute. Upload Excel file first.'})
+
     # Reset status
     transfer_status = {
         'running': True,
         'current': 0,
         'total': total,
+        'offset': offset,
         'current_item': None,
-        'message': 'Starting batch execution...',
+        'message': f'Resuming: {offset} already done...' if resumed else 'Starting batch execution...',
         'result': None,
         'error_detected': False
     }
@@ -579,36 +803,6 @@ def stop_execution():
     return jsonify({'success': False, 'message': 'No execution in progress'})
 
 
-@app.route('/pause', methods=['POST'])
-def pause_execution():
-    """Pause the current batch execution"""
-    global execution_status
-    
-    if not execution_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_pause()
-    execution_status['message'] = 'Paused'
-    
-    return jsonify({'success': True, 'message': 'Paused'})
-
-
-@app.route('/resume', methods=['POST'])
-def resume_execution():
-    """Resume a paused batch execution"""
-    global execution_status
-    
-    if not execution_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_resume()
-    execution_status['message'] = 'Resumed'
-    
-    return jsonify({'success': True, 'message': 'Resumed'})
-
-
 @app.route('/status')
 def get_status():
     """Get current execution status"""
@@ -653,6 +847,28 @@ def device_status():
             'devices': [],
             'error': str(e)
         })
+
+
+@app.route('/active-batch')
+def active_batch():
+    """Which flow currently owns the device (if any) and its status snapshot.
+
+    Lets pages reconnect to a running batch after a refresh and warn when a
+    different flow holds the device.
+    """
+    flow = device_owner
+    statuses = {
+        'stock': execution_status,
+        'transfer': transfer_status,
+        'receive': receive_status,
+        'pick': pick_status,
+        'change_state': change_state_status,
+    }
+    return jsonify({
+        'flow': flow,
+        'label': FLOW_LABELS.get(flow),
+        'status': statuses.get(flow)
+    })
 
 
 @app.route('/bulk-stock')
@@ -781,7 +997,11 @@ def execute_single_change_state():
     
     if not imei or not new_product_id:
         return jsonify({'success': False, 'message': 'IMEI and Product ID are required'})
-    
+
+    owner = try_acquire_device('change_state')
+    if owner:
+        return device_busy_response(owner)
+
     try:
         change_state_status['running'] = True
         change_state_status['current'] = 1
@@ -816,13 +1036,15 @@ def execute_single_change_state():
         change_state_status['running'] = False
         change_state_status['message'] = f'Error: {str(e)}'
         return jsonify({'success': False, 'message': str(e)})
+    finally:
+        release_device('change_state')
 
 
-def execute_change_state_batch_worker(items):
+def execute_change_state_batch_worker(items, total=None):
     """Background worker for batch Change Item State execution - runs change_item_state_auto.py"""
     global change_state_status, change_state_process
 
-    total = len(items)
+    total = total if total is not None else len(items)
     script_path = str(_project_root / 'change_item_state_auto.py')
     progress_file = 'change_state_progress.txt'
     error_detector = None
@@ -833,7 +1055,8 @@ def execute_change_state_batch_worker(items):
         # Capture the current progress at the moment of error
         error_at_item[0] = change_state_status['current']
         change_state_status['error_detected'] = True
-        change_state_status['message'] = 'Error detected: Red screen - stopping execution...'
+        change_state_status['message'] = ('Error detected: Red screen - stopping. '
+             'Dismiss the error on the device, then press Resume.')
         # Create stop signal FIRST so script sees it before terminate
         create_stop_signal('change_state')
         if change_state_process:
@@ -956,6 +1179,8 @@ def execute_change_state_batch_worker(items):
         if error_detector:
             error_detector.stop()
         change_state_process = None
+        clear_stop_signal('change_state')
+        release_device('change_state')
 
 
 @app.route('/change-state/execute-batch', methods=['POST'])
@@ -965,27 +1190,38 @@ def execute_change_state_batch():
     
     if change_state_status['running']:
         return jsonify({'success': False, 'message': 'Another execution is in progress'})
-    
+
+    owner = try_acquire_device('change_state')
+    if owner:
+        return device_busy_response(owner)
+
     # Use items from request or pending items
     data = request.json or {}
     items = data.get('items', pending_change_state_items)
-    
-    if not items:
+
+    offset = 0
+    total = len(items)
+    resumed = apply_resume('change_state', change_state_status) if data.get('resume') else None
+    if resumed:
+        offset, total = resumed
+    elif not items:
+        release_device('change_state')
         return jsonify({'success': False, 'message': 'No items to execute'})
-    
+
     # Reset status
     change_state_status = {
         'running': True,
         'current': 0,
-        'total': len(items),
+        'total': total,
+        'offset': offset,
         'current_item': None,
-        'message': 'Starting batch execution...',
+        'message': f'Resuming: {offset} already done...' if resumed else 'Starting batch execution...',
         'result': None,
         'error_detected': False
     }
-    
+
     # Start background thread
-    thread = threading.Thread(target=execute_change_state_batch_worker, args=(items,))
+    thread = threading.Thread(target=execute_change_state_batch_worker, args=(items, total))
     thread.daemon = True
     thread.start()
     
@@ -1012,36 +1248,6 @@ def stop_change_state():
             pass
     
     return jsonify({'success': True, 'message': 'Stop requested'})
-
-
-@app.route('/change-state/pause', methods=['POST'])
-def pause_change_state():
-    """Pause the current Change Item State batch execution"""
-    global change_state_status
-    
-    if not change_state_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_pause()
-    change_state_status['message'] = 'Paused'
-    
-    return jsonify({'success': True, 'message': 'Paused'})
-
-
-@app.route('/change-state/resume', methods=['POST'])
-def resume_change_state():
-    """Resume a paused Change Item State batch execution"""
-    global change_state_status
-    
-    if not change_state_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_resume()
-    change_state_status['message'] = 'Resumed'
-    
-    return jsonify({'success': True, 'message': 'Resumed'})
 
 
 @app.route('/change-state/status')
@@ -1092,27 +1298,38 @@ def execute_single_receive():
     if not all([order_id, sublocation, product_id, imei]):
         return jsonify({'success': False, 'message': 'All fields are required'})
     
+    owner = try_acquire_device('receive')
+    if owner:
+        return device_busy_response(owner)
+
     try:
         # For single receive, we can write to receive_data.txt and execute receive_typing.py
-        # Format: product name (from product_id), then IMEI
+        # Format: product name (from product_id, marked), then IMEI
         receive_data_file = get_data_file_path('receive_data.txt')
         with open(receive_data_file, 'w') as f:
-            f.write(f"{product_id}\n")
+            f.write(f"{PRODUCT_MARKER}{product_id}\n")
             f.write(f"{imei}\n")
-        
-        # Execute receive_typing.py in background
+
+        # Execute receive_typing.py in background; hold the device claim
+        # until the script finishes.
         script_path = str(_project_root / 'receive_typing.py')
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [sys.executable, script_path],
             cwd=str(_project_root)
         )
-        
+
+        def _release_when_done(p):
+            p.wait()
+            release_device('receive')
+        threading.Thread(target=_release_when_done, args=(proc,), daemon=True).start()
+
         return jsonify({
             'success': True,
             'message': f'Received {imei} for {product_id} (executing receive_typing.py)'
         })
-        
+
     except Exception as e:
+        release_device('receive')
         return jsonify({'success': False, 'message': str(e)})
 
 
@@ -1309,11 +1526,12 @@ def confirm_receive_products():
             'imeis': original_item['imeis']
         })
     
-    # Write to receive_data.txt with user-provided product IDs
+    # Write to receive_data.txt with user-provided product IDs. Product lines
+    # are marked so receive_typing.py can tell them from IMEIs without guessing.
     receive_data_file = get_data_file_path('receive_data.txt')
     with open(receive_data_file, 'w') as f:
         for item in final_items:
-            f.write(f"{item['product_name']}\n")
+            f.write(f"{PRODUCT_MARKER}{item['product_name']}\n")
             for imei in item['imeis']:
                 f.write(f"{imei}\n")
     
@@ -1341,11 +1559,11 @@ def confirm_receive_products():
     })
 
 
-def execute_receive_batch_worker(items):
+def execute_receive_batch_worker(items, total=None, fresh_skip_log=True):
     """Background worker for batch Receive execution - runs receive_typing.py"""
     global receive_status, receive_process
 
-    total = len(items)
+    total = total if total is not None else len(items)
     script_path = str(_project_root / 'receive_typing.py')
     progress_file = 'receive_progress.txt'
     error_detector = None
@@ -1358,7 +1576,8 @@ def execute_receive_batch_worker(items):
         # This represents the last successfully completed item
         error_at_item[0] = receive_status['current']
         receive_status['error_detected'] = True
-        receive_status['message'] = 'Error detected: Red screen - stopping execution...'
+        receive_status['message'] = ('Error detected: Red screen - stopping. '
+             'Dismiss the error on the device, then press Resume.')
         # Create stop signal FIRST so script sees it before terminate
         create_stop_signal('receive')
         if receive_process:
@@ -1385,14 +1604,15 @@ def execute_receive_batch_worker(items):
     try:
         # Clear any existing stop signal before starting
         clear_stop_signal('receive')
-        # Reset the skipped log + count for this run
-        skipped_path = get_data_file_path('receive_skipped.txt')
-        try:
-            if os.path.exists(skipped_path):
-                os.remove(skipped_path)
-        except OSError:
-            pass
-        receive_status['skipped'] = 0
+        # Fresh runs start a new skipped log; resumed runs keep accumulating
+        if fresh_skip_log:
+            skipped_path = get_data_file_path('receive_skipped.txt')
+            try:
+                if os.path.exists(skipped_path):
+                    os.remove(skipped_path)
+            except OSError:
+                pass
+            receive_status['skipped'] = 0
         receive_status['current'] = 0
         receive_status['total'] = total
         receive_status['message'] = 'Starting receive_typing.py...'
@@ -1499,6 +1719,8 @@ def execute_receive_batch_worker(items):
         if error_detector:
             error_detector.stop()
         receive_process = None
+        clear_stop_signal('receive')
+        release_device('receive')
 
 
 @app.route('/execute-receive-batch', methods=['POST'])
@@ -1508,39 +1730,60 @@ def execute_receive_batch():
     
     if receive_status['running']:
         return jsonify({'success': False, 'message': 'Another execution is in progress'})
-    
+
+    owner = try_acquire_device('receive')
+    if owner:
+        return device_busy_response(owner)
+
     # Use items from request or pending items
     data = request.json or {}
     items = data.get('items', pending_receive_items)
     sublocation = data.get('sublocation', '').strip()
-    
-    if not items:
-        return jsonify({'success': False, 'message': 'No items to execute'})
-    
-    if not sublocation:
-        return jsonify({'success': False, 'message': 'Sublocation is required'})
-    
-    # Write sublocation to file for receive_typing.py to read
-    sublocation_file = get_data_file_path('receive_sublocation.txt')
-    with open(sublocation_file, 'w') as f:
-        f.write(sublocation)
-    
-    print(f"Receive batch: sublocation={sublocation}, {len(items)} items")
-    
+
+    offset = 0
+    total = len(items)
+    resumed = apply_resume('receive', receive_status) if data.get('resume') else None
+    if resumed:
+        offset, total = resumed
+    else:
+        if not items:
+            release_device('receive')
+            return jsonify({'success': False, 'message': 'No items to execute'})
+        if not sublocation:
+            release_device('receive')
+            return jsonify({'success': False, 'message': 'Sublocation is required'})
+
+    # Write sublocation to file for receive_typing.py to read. On resume with
+    # an empty field (e.g. after a page refresh) the original run's file is kept.
+    if sublocation:
+        sublocation_file = get_data_file_path('receive_sublocation.txt')
+        with open(sublocation_file, 'w') as f:
+            f.write(sublocation)
+
+    print(f"Receive batch: sublocation={sublocation or '(unchanged)'}, {total} items"
+          f"{f' (resumed, {offset} done)' if resumed else ''}")
+
     # Reset status
     receive_status = {
         'running': True,
         'current': 0,
-        'total': len(items),
+        'total': total,
+        'offset': offset,
         'current_item': None,
-        'message': 'Starting batch execution...',
+        'message': f'Resuming: {offset} already done...' if resumed else 'Starting batch execution...',
         'result': None,
         'error_detected': False,
-        'skipped': 0
+        'skipped': count_skipped_file() if resumed else 0,
+        'ocr_available': OCR_AVAILABLE
     }
-    
-    # Start background thread to run receive_typing.py
-    thread = threading.Thread(target=execute_receive_batch_worker, args=(items,))
+    if not OCR_AVAILABLE:
+        print("WARNING: OCR unavailable (Tesseract missing) - duplicate barcodes "
+              "will STOP the run instead of being skipped.")
+
+    # Start background thread to run receive_typing.py. A resumed run keeps the
+    # skipped-duplicates log accumulating across segments.
+    thread = threading.Thread(target=execute_receive_batch_worker,
+                              args=(items, total, not resumed))
     thread.daemon = True
     thread.start()
     
@@ -1570,36 +1813,6 @@ def receive_status_stream():
     return Response(generate(), mimetype='text/event-stream')
 
 
-@app.route('/receive-pause', methods=['POST'])
-def pause_receive():
-    """Pause the current Receive batch execution"""
-    global receive_status
-    
-    if not receive_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_pause()
-    receive_status['message'] = 'Paused'
-    
-    return jsonify({'success': True, 'message': 'Paused'})
-
-
-@app.route('/receive-resume', methods=['POST'])
-def resume_receive():
-    """Resume a paused Receive batch execution"""
-    global receive_status
-    
-    if not receive_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-    
-    auto = get_automator()
-    auto.request_resume()
-    receive_status['message'] = 'Resumed'
-    
-    return jsonify({'success': True, 'message': 'Resumed'})
-
-
 @app.route('/receive-stop', methods=['POST'])
 def stop_receive():
     """Stop the current Receive batch execution"""
@@ -1617,6 +1830,54 @@ def stop_receive():
             pass
     
     return jsonify({'success': True, 'message': 'Stop requested'})
+
+
+@app.route('/receive-skipped-count')
+def receive_skipped_count():
+    """Number of duplicate IMEIs skipped so far (survives page reloads)."""
+    return jsonify({'count': count_skipped_file()})
+
+
+@app.route('/download-receive-skipped')
+def download_receive_skipped():
+    """Download the skipped-duplicates log as an Excel file."""
+    rows = []
+    path = get_data_file_path('receive_skipped.txt')
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                # imei<TAB>product<TAB>time; old logs have only the IMEI column
+                parts = line.rstrip('\n').split('\t')
+                rows.append((
+                    parts[0].strip(),
+                    parts[1].strip() if len(parts) > 1 else '',
+                    parts[2].strip() if len(parts) > 2 else ''
+                ))
+
+    if not rows:
+        return jsonify({'success': False, 'message': 'No skipped IMEIs recorded yet'}), 404
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Skipped IMEIs'
+    ws.append(['IMEI', 'Product', 'Time skipped'])
+    for row in rows:
+        ws.append(row)  # values are strings, so IMEIs keep their digits
+    ws.column_dimensions['A'].width = 22
+    ws.column_dimensions['B'].width = 40
+    ws.column_dimensions['C'].width = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"skipped_imeis_{time.strftime('%Y%m%d_%H%M%S')}.xlsx",
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 # ============================================================
@@ -1708,11 +1969,11 @@ def upload_pick_excel():
         return jsonify({'success': False, 'message': f'Error reading Excel: {str(e)}'})
 
 
-def execute_pick_batch_worker():
+def execute_pick_batch_worker(total=None):
     """Background worker for batch Pick execution - runs pick_typing.py"""
     global pick_status, pick_process
 
-    total = len(pending_pick_items)
+    total = total if total is not None else len(pending_pick_items)
     script_path = str(_project_root / 'pick_typing.py')
     progress_file = 'pick_progress.txt'
     error_detector = None
@@ -1723,7 +1984,8 @@ def execute_pick_batch_worker():
         # Capture the current progress at the moment of error
         error_at_item[0] = pick_status['current']
         pick_status['error_detected'] = True
-        pick_status['message'] = 'Error detected: Red screen - stopping execution...'
+        pick_status['message'] = ('Error detected: Red screen - stopping. '
+             'Dismiss the error on the device, then press Resume.')
         # Create stop signal FIRST so script sees it before terminate
         create_stop_signal('pick')
         if pick_process:
@@ -1839,6 +2101,8 @@ def execute_pick_batch_worker():
         if error_detector:
             error_detector.stop()
         pick_process = None
+        clear_stop_signal('pick')
+        release_device('pick')
 
 
 @app.route('/execute-pick-batch', methods=['POST'])
@@ -1849,25 +2113,38 @@ def execute_pick_batch():
     if pick_status['running']:
         return jsonify({'success': False, 'message': 'Pick batch already in progress'})
 
-    if not pending_pick_items:
-        return jsonify({'success': False, 'message': 'No items loaded. Upload Excel file first.'})
+    owner = try_acquire_device('pick')
+    if owner:
+        return device_busy_response(owner)
 
-    # Write to pick_data.txt (preserve empty lines for ENTER-only actions)
-    pick_data_file = get_data_file_path('pick_data.txt')
-    with open(pick_data_file, 'w') as f:
-        for item in pending_pick_items:
-            f.write(item + '\n')
+    data = request.json or {}
+    offset = 0
+    total = len(pending_pick_items)
+    resumed = apply_resume('pick', pick_status) if data.get('resume') else None
+    if resumed:
+        # Data file already trimmed to the remaining items - don't rewrite it
+        offset, total = resumed
+    elif not pending_pick_items:
+        release_device('pick')
+        return jsonify({'success': False, 'message': 'No items loaded. Upload Excel file first.'})
+    else:
+        # Write to pick_data.txt (preserve empty lines for ENTER-only actions)
+        pick_data_file = get_data_file_path('pick_data.txt')
+        with open(pick_data_file, 'w') as f:
+            for item in pending_pick_items:
+                f.write(item + '\n')
 
     # Reset status
     pick_status['running'] = True
     pick_status['current'] = 0
-    pick_status['total'] = len(pending_pick_items)
-    pick_status['message'] = 'Starting...'
+    pick_status['total'] = total
+    pick_status['offset'] = offset
+    pick_status['message'] = f'Resuming: {offset} already done...' if resumed else 'Starting...'
     pick_status['error_detected'] = False
     pick_status['result'] = None
 
     # Start background worker
-    thread = threading.Thread(target=execute_pick_batch_worker)
+    thread = threading.Thread(target=execute_pick_batch_worker, args=(total,))
     thread.daemon = True
     thread.start()
 
@@ -1895,36 +2172,6 @@ def pick_status_stream():
                 break
 
     return Response(generate(), mimetype='text/event-stream')
-
-
-@app.route('/pick-pause', methods=['POST'])
-def pause_pick():
-    """Pause the current Pick batch execution"""
-    global pick_status
-
-    if not pick_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-
-    auto = get_automator()
-    auto.request_pause()
-    pick_status['message'] = 'Paused'
-
-    return jsonify({'success': True, 'message': 'Paused'})
-
-
-@app.route('/pick-resume', methods=['POST'])
-def resume_pick():
-    """Resume a paused Pick batch execution"""
-    global pick_status
-
-    if not pick_status['running']:
-        return jsonify({'success': False, 'message': 'No execution in progress'})
-
-    auto = get_automator()
-    auto.request_resume()
-    pick_status['message'] = 'Resumed'
-
-    return jsonify({'success': True, 'message': 'Resumed'})
 
 
 @app.route('/pick-stop', methods=['POST'])
@@ -2024,7 +2271,10 @@ def reset_device():
         # Small delay to let processes stop
         if stopped_process:
             time.sleep(0.5)
-        
+
+        # Everything is stopped; clear any device claim so flows can start fresh
+        force_release_device()
+
         # Perform the reset
         auto = get_automator()
         result = auto.reset_all_data()

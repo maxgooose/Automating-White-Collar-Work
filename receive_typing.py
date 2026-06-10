@@ -13,9 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 try:
-    from adb_utils import get_adb_path, get_data_file_path, check_stop_signal
+    from adb_utils import (get_adb_path, get_data_file_path, check_stop_signal,
+                           clear_stop_signal, PRODUCT_MARKER)
 except ImportError:
-    from src.adb_utils import get_adb_path, get_data_file_path, check_stop_signal
+    from src.adb_utils import (get_adb_path, get_data_file_path, check_stop_signal,
+                               clear_stop_signal, PRODUCT_MARKER)
 
 try:
     import screen_inspect
@@ -36,6 +38,32 @@ DUP_DISMISS_RETRIES = 3
 # Heavier settle waits so the app fully records the dismissal before we move on.
 DUP_DISMISS_WAIT = 1.0       # after pressing Back, before checking it cleared
 DUP_POST_SKIP_WAIT = 2.0     # after a confirmed skip, before typing the next IMEI
+
+# Fallback product detection for receive_data.txt files written before the
+# server started marking product lines with PRODUCT_MARKER.
+LEGACY_PRODUCT_PREFIXES = ("ipad", "good", "iphone", "accep", "galaxy")
+
+
+def parse_receive_items(lines):
+    """Classify data-file lines into ('product'|'imei', value) tuples.
+
+    Files written by the current server mark product lines with PRODUCT_MARKER;
+    everything else is an IMEI. Files without any marker (older deployments /
+    hand-made) fall back to the legacy prefix heuristic.
+    """
+    has_markers = any(line.startswith(PRODUCT_MARKER) for line in lines)
+    items = []
+    for line in lines:
+        if has_markers:
+            if line.startswith(PRODUCT_MARKER):
+                items.append(("product", line[len(PRODUCT_MARKER):].strip()))
+            else:
+                items.append(("imei", line))
+        elif line.lower().startswith(LEGACY_PRODUCT_PREFIXES):
+            items.append(("product", line))
+        else:
+            items.append(("imei", line))
+    return items
 
 
 def type_text(text):
@@ -62,11 +90,15 @@ def press_back_key():
     subprocess.run([ADB, "shell", "input", "keyevent", "KEYCODE_BACK"], capture_output=True)
 
 
-def append_skipped(imei):
-    """Record an IMEI that was skipped because it already exists in the system."""
+def append_skipped(imei, product=""):
+    """Record a skipped duplicate IMEI (tab-separated: imei, product, time).
+
+    One line per skip, so line-count consumers keep working; the server's
+    Excel download parses the columns.
+    """
     skipped_file = get_data_file_path("receive_skipped.txt")
     with open(skipped_file, "a") as f:
-        f.write(f"{imei}\n")
+        f.write(f"{imei}\t{product}\t{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 
 def dismiss_error_screen(back_xy):
@@ -87,7 +119,7 @@ def dismiss_error_screen(back_xy):
     return False
 
 
-def submit_imei_and_handle_dup(imei, index, total):
+def submit_imei_and_handle_dup(imei, index, total, product=""):
     """Type an IMEI, submit it, and handle the duplicate-barcode error screen.
 
     Returns 'ok' if accepted, or 'skipped' if it already existed and was skipped
@@ -114,7 +146,7 @@ def submit_imei_and_handle_dup(imei, index, total):
                 f"Could not dismiss 'Barcode already exists' screen for {imei}; stopping.\n"
             )
             sys.exit(1)
-        append_skipped(imei)
+        append_skipped(imei, product)
         print(f"  [SKIPPED {index}/{total}] {imei} - already exists")
         time.sleep(DUP_POST_SKIP_WAIT)
         return "skipped"
@@ -138,12 +170,17 @@ def write_progress(current, total):
 
 
 def main():
+    # A stop file left over from a previous (stopped/crashed) run must not
+    # kill this run: the stop signal only targets a live process.
+    clear_stop_signal("receive")
+
     # Get data file path (cross-platform)
     data_file = get_data_file_path("receive_data.txt")
     
     if not os.path.exists(data_file):
-        print(f"ERROR: Data file not found: {data_file}")
-        print("Upload an Excel file via the web interface first.")
+        # stderr so the server surfaces this in the UI instead of a silent stop
+        sys.stderr.write(f"Data file not found: {data_file}. "
+                         "Upload an Excel file via the web interface first.\n")
         sys.exit(1)
     
     # Read sublocation from file (written by server)
@@ -153,31 +190,26 @@ def main():
         with open(sublocation_file, "r") as f:
             sublocation = f.read().strip()
     
-    # Read data from file
+    # Read data from file and classify lines as products vs IMEIs
     with open(data_file, "r") as f:
-        items = [line.strip() for line in f if line.strip()]
-    
+        lines = [line.strip() for line in f if line.strip()]
+    items = parse_receive_items(lines)
+
     if not items:
         print("ERROR: No data found in receive_data.txt")
         sys.exit(1)
-    
+
     total = len(items)
     print(f"ADB path: {ADB}")
     print(f"Processing {total} items...")
     print("-" * 40)
     
-    # Initialize progress
+    # Initialize progress. NOTE: the skipped log (receive_skipped.txt) is
+    # owned by the server - it clears it for fresh runs and keeps it for
+    # resumed runs, so the download covers the whole batch.
     write_progress(0, total)
 
-    # Start a fresh skipped log for this run (covers the standalone run path;
-    # the server also clears it when launched via the web UI).
-    skipped_file = get_data_file_path("receive_skipped.txt")
-    try:
-        if os.path.exists(skipped_file):
-            os.remove(skipped_file)
-    except OSError:
-        pass
-    
+
     # Type sublocation and submit
     if sublocation:
         print(f"[SUBLOCATION] {sublocation}")
@@ -186,37 +218,43 @@ def main():
         press_enter()
         time.sleep(0.1)
     
-    # First item handled separately
-    print(f"[1/{total}] {items[0]}")
-    type_text(items[0])
+    # Track which product the current IMEIs belong to (for the skipped log)
+    current_product = ""
+
+    # First item handled separately (fresh screen: no leading ENTER needed)
+    first_kind, first_value = items[0]
+    if first_kind == "product":
+        current_product = first_value
+    print(f"[1/{total}] {first_value}")
+    type_text(first_value)
     time.sleep(1)
     press_enter()
     time.sleep(1)
     current = 1
     write_progress(current, total)
-    
-    for i, item in enumerate(items[1:], 2):
+
+    for i, (kind, value) in enumerate(items[1:], 2):
         # Check for stop signal BEFORE processing this item
         if check_stop_signal('receive'):
             print(f"Stop signal received. Stopping at item {i-1}/{total}")
             sys.exit(0)
 
-        print(f"[{i}/{total}] {item}")
+        print(f"[{i}/{total}] {value}")
 
-        # Special handling for non IMEI items
-        if item.lower().startswith('ipad') or item.lower().startswith('good') or item.lower().startswith('iphone') or item.lower().startswith('accep') or item.lower().startswith('galaxy'):
-            print("  Non IMEI item found - special handling")
+        if kind == "product":
+            current_product = value
+            print("  Product line - special handling")
             press_enter()
             time.sleep(3)  # 3 seconds before text is written
-            type_text(item)
+            type_text(value)
             time.sleep(3)  # 3 seconds before pressing enter on it
             press_enter()
             time.sleep(3)  # 3 seconds after pressing enter
             print("  Item typed")
         else:
             time.sleep(0.1)
-            submit_imei_and_handle_dup(item, i, total)
-        
+            submit_imei_and_handle_dup(value, i, total, current_product)
+
         # Update progress after each item
         current += 1
         write_progress(current, total)

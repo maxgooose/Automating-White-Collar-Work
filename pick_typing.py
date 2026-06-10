@@ -16,9 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 try:
-    from adb_utils import get_adb_path, get_data_file_path, check_stop_signal
+    from adb_utils import get_adb_path, get_data_file_path, check_stop_signal, clear_stop_signal
 except ImportError:
-    from src.adb_utils import get_adb_path, get_data_file_path, check_stop_signal
+    from src.adb_utils import get_adb_path, get_data_file_path, check_stop_signal, clear_stop_signal
 
 # Get cross-platform ADB path
 ADB = get_adb_path()
@@ -46,12 +46,17 @@ def write_progress(current, total):
 
 
 def main():
+    # A stop file left over from a previous (stopped/crashed) run must not
+    # kill this run: the stop signal only targets a live process.
+    clear_stop_signal('pick')
+
     # Get data file path (cross-platform)
     data_file = get_data_file_path("pick_data.txt")
 
     if not os.path.exists(data_file):
-        print(f"ERROR: Data file not found: {data_file}")
-        print("Upload an Excel file via the web interface first.")
+        # stderr so the server surfaces this in the UI instead of a silent stop
+        sys.stderr.write(f"Data file not found: {data_file}. "
+                         "Upload an Excel file via the web interface first.\n")
         sys.exit(1)
 
     # Read ALL lines including empty ones (don't strip/filter)

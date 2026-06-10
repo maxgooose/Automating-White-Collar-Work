@@ -374,12 +374,7 @@
             }).join('');
         }
 
-        async function executeBatch() {
-            if (!loadedItems.length) return;
-            isExecuting = true;
-            isStopped = false;
-            updateExecutionUI(true);
-
+        function attachStream() {
             eventSource = new EventSource('/change-state/status-stream');
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -400,11 +395,47 @@
                 }
             };
             eventSource.onerror = () => { eventSource.close(); isExecuting = false; updateExecutionUI(false); };
+        }
+
+        // After a refresh mid-run, re-attach to the running batch (or warn if
+        // a different flow holds the device).
+        async function reconnectIfRunning() {
+            try {
+                const res = await fetch('/active-batch');
+                const data = await res.json();
+                if (!data.flow || !data.status || !data.status.running) return;
+                const status = document.getElementById('uploadStatus');
+                if (data.flow === 'change_state') {
+                    isExecuting = true;
+                    isStopped = false;
+                    document.getElementById('batchButtons').style.display = 'flex';
+                    updateExecutionUI(true);
+                    status.className = 'status';
+                    status.textContent = 'Reconnected to the running batch...';
+                    attachStream();
+                } else {
+                    status.className = 'status error';
+                    status.textContent = `A ${data.label} batch is running - manage it on its page.`;
+                }
+            } catch (e) { /* server unreachable */ }
+        }
+        reconnectIfRunning();
+
+        async function executeBatch() {
+            if (!loadedItems.length) return;
+            // "Resume" (after a stop/error) continues from the last completed
+            // item server-side instead of restarting the whole batch.
+            const resume = isStopped;
+            isExecuting = true;
+            isStopped = false;
+            updateExecutionUI(true);
+
+            attachStream();
 
             const res = await fetch('/change-state/execute-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: loadedItems })
+                body: JSON.stringify({ items: loadedItems, resume: resume })
             });
             const data = await res.json();
             if (!data.success) {
@@ -462,7 +493,8 @@
         }
 
         function updateProgress(data) {
-            if (data.current > 0) renderItemList(data.current - 1, data.current - 1);
+            const done = (data.offset || 0) + data.current;
+            if (data.current > 0) renderItemList(done - 1, done - 1);
 
             // Show/hide error banner
             const errorBanner = document.getElementById('errorBanner');

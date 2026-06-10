@@ -78,6 +78,11 @@ def get_adb_path() -> str:
     )
 
 
+# Marker prefixing product-name lines in receive_data.txt. The server writes it
+# so receive_typing.py can tell products from IMEIs without guessing by prefix.
+PRODUCT_MARKER = "#P:"
+
+
 def get_project_root() -> Path:
     """Get the project root directory."""
     # This file is in src/, so parent is project root

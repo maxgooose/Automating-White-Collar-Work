@@ -98,7 +98,8 @@ Press `Ctrl+C` in the terminal running the server.
 
 2. Drag & drop or click to upload the Excel file
 3. Click **Execute All**
-4. Use **Pause/Resume** or **Stop** as needed
+4. Use **Stop** as needed - after a stop or error, the button becomes
+   **Resume** and continues from the last completed item
 
 ---
 

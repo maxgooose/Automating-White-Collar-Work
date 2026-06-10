@@ -366,12 +366,7 @@
             }).join('');
         }
 
-        async function executeBatch() {
-            if (!loadedItems.length) return;
-            isExecuting = true;
-            isStopped = false;
-            updateExecutionUI(true);
-            
+        function attachStream() {
             eventSource = new EventSource('/status-stream');
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -387,7 +382,40 @@
                 }
             };
             eventSource.onerror = () => { eventSource.close(); isExecuting = false; updateExecutionUI(false); };
-            
+        }
+
+        // After a refresh mid-run, re-attach to the running batch (or warn if
+        // a different flow holds the device).
+        async function reconnectIfRunning() {
+            try {
+                const res = await fetch('/active-batch');
+                const data = await res.json();
+                if (!data.flow || !data.status || !data.status.running) return;
+                const status = document.getElementById('uploadStatus');
+                if (data.flow === 'stock') {
+                    isExecuting = true;
+                    isStopped = false;
+                    document.getElementById('batchButtons').style.display = 'flex';
+                    updateExecutionUI(true);
+                    status.className = 'status';
+                    status.textContent = 'Reconnected to the running batch...';
+                    attachStream();
+                } else {
+                    status.className = 'status error';
+                    status.textContent = `A ${data.label} batch is running - manage it on its page.`;
+                }
+            } catch (e) { /* server unreachable */ }
+        }
+        reconnectIfRunning();
+
+        async function executeBatch() {
+            if (!loadedItems.length) return;
+            isExecuting = true;
+            isStopped = false;
+            updateExecutionUI(true);
+
+            attachStream();
+
             const res = await fetch('/execute-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

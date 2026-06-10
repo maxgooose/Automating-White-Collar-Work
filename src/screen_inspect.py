@@ -26,6 +26,7 @@ is missing, OCR_AVAILABLE is False and callers must fall back to stop-on-red
 import io
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -42,14 +43,49 @@ try:
 except ImportError:
     pytesseract = None
 
-# Allow pointing at a Tesseract engine that isn't on PATH (e.g. a portable
-# Windows deployment): set TESSERACT_CMD to the tesseract executable path.
+# Standard Windows install dirs for the Tesseract engine (winget / UB-Mannheim
+# installer puts it in one of these depending on per-user vs all-users install).
+_TESSERACT_DIRS = [
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR"),
+    r"C:\Program Files\Tesseract-OCR",
+    r"C:\Program Files (x86)\Tesseract-OCR",
+]
+
+
+def _locate_tesseract():
+    """Resolve the tesseract executable: TESSERACT_CMD env var (portable
+    deployments) > PATH (pytesseract's default) > standard install dirs.
+    Returns an explicit path to set, or None to keep pytesseract's default."""
+    env_cmd = os.environ.get("TESSERACT_CMD")
+    if env_cmd:
+        return env_cmd
+    if shutil.which("tesseract"):
+        return None
+    for d in _TESSERACT_DIRS:
+        exe = os.path.join(d, "tesseract.exe")
+        if os.path.isfile(exe):
+            return exe
+    return None
+
+
+def _engine_works():
+    """True if the Tesseract engine binary actually answers."""
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception as e:
+        print(f"screen_inspect: Tesseract engine not usable: {e}")
+        return False
+
+
 if pytesseract is not None:
-    _tess_cmd = os.environ.get("TESSERACT_CMD")
+    _tess_cmd = _locate_tesseract()
     if _tess_cmd:
         pytesseract.pytesseract.tesseract_cmd = _tess_cmd
 
-OCR_AVAILABLE = (Image is not None) and (pytesseract is not None)
+# "Available" means the Python bindings import AND the engine binary answers;
+# a missing engine must degrade to stop-on-red, not a misleading 'other_red'.
+OCR_AVAILABLE = (Image is not None) and (pytesseract is not None) and _engine_works()
 
 # Red-pixel thresholds mirror ErrorDetector (src/error_detector.py). NOTE: a PIL
 # image is RGB, unlike mss's BGRA, so the channel indices differ here.
@@ -205,17 +241,22 @@ def read_screen_state(adb_path, attempts=2, interval=0.3):
       'unknown'    - screen capture failed
     """
     red_img = None
+    any_capture_ok = False
     for _ in range(max(1, attempts)):
         time.sleep(interval)
         img = capture_raw(adb_path)
         if img is None:
             continue
+        any_capture_ok = True
         if is_screen_red(img):
             red_img = img
             break
 
     if red_img is None:
-        # capture may have failed every time, or there was simply no red screen.
+        if not any_capture_ok:
+            # Every capture failed: we know nothing about the screen, so the
+            # caller must stop rather than keep typing into an unknown state.
+            return {"state": "unknown", "back_xy": None}
         return {"state": "clear", "back_xy": None}
 
     if not OCR_AVAILABLE:
