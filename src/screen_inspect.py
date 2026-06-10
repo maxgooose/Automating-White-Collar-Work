@@ -12,12 +12,14 @@ Capture uses `adb exec-out screencap -p` (raw PNG on stdout) to avoid the Window
 CRLF corruption that affects `adb shell screencap -p`; a screencap+pull fallback
 covers old adb builds.
 
-Coordinate note: the device framebuffer is portrait (e.g. 1080x2400) while the
-app and `adb input tap` use a landscape (2400x1080) space, and the framebuffer's
-text is rotated 90 degrees. The exact rotation sign is device-specific, so OCR is
-attempted on BOTH landscape rotations and we accept whichever yields the expected
-text. That same orientation is the one in which an OCR-located "Back" box maps
-onto input-tap coordinates.
+Coordinate note: the device framebuffer is portrait (e.g. 1080x2400) and that is
+ALSO the space `adb shell input tap` uses on this device (verified live: view
+point (332,193) on the duplicate screen maps to portrait (193,2067), which
+dismissed it). The app's landscape content is rotated inside that portrait
+buffer, and the rotation sign is device-specific, so OCR is attempted on BOTH
+landscape rotations and we accept whichever yields the expected text - then an
+OCR-located "Back" box is mapped back through the inverse rotation into
+portrait tap coordinates.
 
 Pillow + pytesseract + the Tesseract engine are required for the OCR step. If any
 is missing, OCR_AVAILABLE is False and callers must fall back to stop-on-red
@@ -94,9 +96,10 @@ RED_G_MAX = 100
 RED_B_MAX = 100
 RED_RATIO_THRESHOLD = 0.001  # >0.1% red pixels => an error screen is showing
 
-# Landscape logical resolution that `adb input tap` expects (android_controller.py).
-TAP_WIDTH = 2400
-TAP_HEIGHT = 1080
+# Verified live on the Finale duplicate-barcode screen (portrait 1080x2400
+# framebuffer): tapping this point dismisses it. Used whenever OCR confirms a
+# duplicate but cannot locate the "Back" word itself.
+BACK_TAP_FALLBACK = (193, 2067)
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -173,18 +176,37 @@ def is_screen_red(img):
 
 
 def _landscape_candidates(img):
-    """Yield images likely to be upright-landscape.
+    """Yield (image, rotation) pairs likely to be upright-landscape.
 
     The device buffer is portrait but the app is landscape; the rotation sign is
     device-specific, so we try both 90-degree rotations and let OCR decide. If
-    the capture is already landscape we use it as-is.
+    the capture is already landscape we use it as-is. `rotation` records how the
+    buffer was rotated to produce the view ('cw', 'ccw' or 'none') so points can
+    be mapped back into buffer/tap coordinates.
     """
     w, h = img.size
     if w >= h:
-        yield img
+        yield img, "none"
     else:
-        yield img.rotate(-90, expand=True)  # clockwise
-        yield img.rotate(90, expand=True)   # counter-clockwise
+        yield img.rotate(-90, expand=True), "cw"   # clockwise
+        yield img.rotate(90, expand=True), "ccw"   # counter-clockwise
+
+
+def _view_to_tap_xy(xv, yv, rotation, buffer_size):
+    """Map a point in the upright view back to `input tap` coordinates.
+
+    Taps are injected in the native (portrait) framebuffer space - verified
+    live on the duplicate screen. Inverse of the view rotation:
+      cw  (view = buffer rotated clockwise):  x = yv, y = bufH - 1 - xv
+      ccw (view = buffer rotated ccw):        x = bufW - 1 - yv, y = xv
+      none (buffer already landscape):        view == buffer
+    """
+    bw, bh = buffer_size
+    if rotation == "cw":
+        return int(yv), int(bh - 1 - xv)
+    if rotation == "ccw":
+        return int(bw - 1 - yv), int(xv)
+    return int(xv), int(yv)
 
 
 def _normalize(text):
@@ -205,28 +227,35 @@ def _looks_like_duplicate(text):
 
 
 def _find_back_xy(img):
-    """Return (x, y) tap coordinates for the on-screen 'Back' word, or None."""
+    """Return the (x, y) center of the on-screen 'Back' word in VIEW pixels."""
     try:
         data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
     except Exception as e:
         print(f"screen_inspect: image_to_data failed: {e}")
         return None
-    w, h = img.size
-    scale_x = TAP_WIDTH / w if w else 1
-    scale_y = TAP_HEIGHT / h if h else 1
     for i, word in enumerate(data.get("text", [])):
         if word.strip().lower() == "back":
             cx = data["left"][i] + data["width"][i] / 2
             cy = data["top"][i] + data["height"][i] / 2
-            return int(cx * scale_x), int(cy * scale_y)
+            return cx, cy
     return None
 
 
 def classify_frame(img):
-    """Classify a frame already known to be red. Returns a state dict."""
-    for candidate in _landscape_candidates(img):
+    """Classify a frame already known to be red.
+
+    Returns a state dict; for duplicates, back_xy is in input-tap coordinates
+    (OCR-located and rotation-mapped, with the live-verified fixed position as
+    fallback when the word itself can't be found).
+    """
+    for candidate, rotation in _landscape_candidates(img):
         if _looks_like_duplicate(_ocr(candidate)):
-            return {"state": "duplicate", "back_xy": _find_back_xy(candidate)}
+            view_xy = _find_back_xy(candidate)
+            if view_xy:
+                back_xy = _view_to_tap_xy(view_xy[0], view_xy[1], rotation, img.size)
+            else:
+                back_xy = BACK_TAP_FALLBACK
+            return {"state": "duplicate", "back_xy": back_xy}
     return {"state": "other_red", "back_xy": None}
 
 
@@ -293,6 +322,6 @@ if __name__ == "__main__":
         if is_screen_red(frame):
             print(f"classify_frame: {classify_frame(frame)}")
         elif OCR_AVAILABLE:
-            for c in _landscape_candidates(frame):
+            for c, rot in _landscape_candidates(frame):
                 txt = _normalize(_ocr(c)).strip()
-                print(f"  rotation {c.size} OCR -> {txt[:120]!r}")
+                print(f"  rotation {rot} {c.size} OCR -> {txt[:120]!r}")

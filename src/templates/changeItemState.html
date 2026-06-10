@@ -430,8 +430,6 @@
             isStopped = false;
             updateExecutionUI(true);
 
-            attachStream();
-
             const res = await fetch('/change-state/execute-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -441,10 +439,13 @@
             if (!data.success) {
                 document.getElementById('uploadStatus').className = 'status error';
                 document.getElementById('uploadStatus').textContent = data.message;
-                eventSource.close();
                 isExecuting = false;
                 updateExecutionUI(false);
+                return;
             }
+            // Attach only after the server accepted: the stream would otherwise
+            // race the POST, read the PREVIOUS run's final status, and close.
+            attachStream();
         }
 
         async function stopExecution() {

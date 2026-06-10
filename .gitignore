@@ -58,3 +58,4 @@ receive_skipped.txt
 
 # Claude Code project instructions (local only)
 CLAUDE.md
+test_data/

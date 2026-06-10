@@ -71,16 +71,36 @@ def test_classification():
     result = screen_inspect.classify_frame(dup)
     ok("duplicate screen classified", result["state"] == "duplicate", f"got {result}")
     ok("Back button located", result["back_xy"] is not None)
-    if result["back_xy"]:
-        x, y = result["back_xy"]
-        # Drawn near (340..., 910...) in the 2400x1080 tap space
-        ok("Back tap coords plausible", 300 <= x <= 520 and 880 <= y <= 1010,
-           f"got ({x}, {y})")
+    xv, yv = result["back_xy"]
+    # Landscape buffer = 'none' rotation: tap coords == view coords (~340, ~910)
+    ok("Back tap coords plausible", 300 <= xv <= 520 and 880 <= yv <= 1010,
+       f"got ({xv}, {yv})")
 
-    # Portrait capture (device framebuffer orientation) must still classify
-    portrait = make_screen("This barcode already exists!").rotate(90, expand=True)
-    result_p = screen_inspect.classify_frame(portrait)
-    ok("portrait capture classified", result_p["state"] == "duplicate", f"got {result_p}")
+    # Portrait capture, clockwise case: rotating the buffer CW recovers the
+    # view, so tap = (yv, bufH-1-xv). This is the live-verified device mapping.
+    portrait_cw = make_screen("This barcode already exists!").rotate(90, expand=True)
+    r_cw = screen_inspect.classify_frame(portrait_cw)
+    ok("portrait(cw) classified", r_cw["state"] == "duplicate", f"got {r_cw}")
+    ex, ey = yv, 2400 - 1 - xv
+    ok("portrait(cw) tap mapped to buffer coords",
+       abs(r_cw["back_xy"][0] - ex) <= 3 and abs(r_cw["back_xy"][1] - ey) <= 3,
+       f"expected ~({ex},{ey}) got {r_cw['back_xy']}")
+
+    # Portrait capture, counter-clockwise case: tap = (bufW-1-yv, xv)
+    portrait_ccw = make_screen("This barcode already exists!").rotate(-90, expand=True)
+    r_ccw = screen_inspect.classify_frame(portrait_ccw)
+    ok("portrait(ccw) classified", r_ccw["state"] == "duplicate", f"got {r_ccw}")
+    ex2, ey2 = 1080 - 1 - yv, xv
+    ok("portrait(ccw) tap mapped to buffer coords",
+       abs(r_ccw["back_xy"][0] - ex2) <= 3 and abs(r_ccw["back_xy"][1] - ey2) <= 3,
+       f"expected ~({ex2},{ey2}) got {r_ccw['back_xy']}")
+
+    # Duplicate confirmed but no 'Back' word found -> live-verified fallback
+    dup_no_back = make_screen("This barcode already exists!", back_label=False)
+    r_fb = screen_inspect.classify_frame(dup_no_back)
+    ok("fallback to verified Back position",
+       r_fb["state"] == "duplicate" and r_fb["back_xy"] == screen_inspect.BACK_TAP_FALLBACK,
+       f"got {r_fb}")
 
     other = make_screen("Network connection failure", back_label=False)
     result_o = screen_inspect.classify_frame(other)

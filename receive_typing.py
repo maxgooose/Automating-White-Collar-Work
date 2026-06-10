@@ -34,7 +34,6 @@ ADB = get_adb_path()
 # device renders the error quickly.
 DUP_SETTLE_ATTEMPTS = 2
 DUP_SETTLE_INTERVAL = 0.3
-DUP_DISMISS_RETRIES = 3
 # Heavier settle waits so the app fully records the dismissal before we move on.
 DUP_DISMISS_WAIT = 1.0       # after pressing Back, before checking it cleared
 DUP_POST_SKIP_WAIT = 2.0     # after a confirmed skip, before typing the next IMEI
@@ -104,15 +103,20 @@ def append_skipped(imei, product=""):
 def dismiss_error_screen(back_xy):
     """Dismiss the 'Barcode already exists!' screen and confirm it cleared.
 
-    Tries the OCR-located on-screen Back button first (honoring the original
-    request), then falls back to the hardware Back key. Returns True once the
-    red error screen is gone.
+    Attempt order (screenshot-verified between attempts):
+      1. the OCR-located on-screen Back button (rotation-mapped tap coords),
+      2. the live-verified fixed Back position (screen_inspect.BACK_TAP_FALLBACK),
+      3. the hardware Back key (last resort; the app ignores it on this screen,
+         but it costs nothing to try).
+    Returns True once the red error screen is gone.
     """
-    for attempt in range(DUP_DISMISS_RETRIES):
-        if back_xy and attempt == 0:
-            tap(*back_xy)
-        else:
-            press_back_key()
+    attempts = []
+    if back_xy:
+        attempts.append(lambda: tap(*back_xy))
+    attempts.append(lambda: tap(*screen_inspect.BACK_TAP_FALLBACK))
+    attempts.append(press_back_key)
+    for attempt in attempts:
+        attempt()
         time.sleep(DUP_DISMISS_WAIT)
         if screen_inspect.is_clear(ADB):
             return True
